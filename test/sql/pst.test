@@ -1,0 +1,23 @@
+# name: test/sql/pst.test
+# description: test pst extension
+# group: [sql]
+
+# Before we load the extension, this will fail
+statement error
+SELECT pst('Sam');
+----
+Catalog Error: Scalar Function with name pst does not exist!
+
+# Require statement will ensure this test is run with this extension loaded
+require pst
+
+# Confirm the extension works
+query I
+SELECT pst('Sam');
+----
+PST Sam 📧
+
+query I
+SELECT pst_openssl_version('Michael') ILIKE 'PST Michael, my linked OpenSSL version is OpenSSL%';
+----
+true

@@ -1,0 +1,25 @@
+/target
+/classes
+/checkouts
+profiles.clj
+pom.xml
+pom.xml.asc
+*.jar
+*.class
+/.lein-*
+/.nrepl-port
+/.prepl-port
+.hgignore
+.hg/
+
+# DuckDB build artifacts
+/build/
+/.cache/
+
+# Jank REPL history
+.jank-repl-history
+.jank-native-repl-history
+
+# IDE files
+.idea/
+*.iml
