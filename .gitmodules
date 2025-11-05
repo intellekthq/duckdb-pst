@@ -6,3 +6,6 @@
 	path = extension-ci-tools
 	url = https://github.com/duckdb/extension-ci-tools
 	branch = main
+[submodule "microsoft-pst-sdk"]
+	path = microsoft-pst-sdk
+	url = git@github.com:enrondata/microsoft-pst-sdk.git
