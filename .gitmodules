@@ -8,4 +8,4 @@
 	branch = main
 [submodule "microsoft-pst-sdk"]
 	path = microsoft-pst-sdk
-	url = git@github.com:enrondata/microsoft-pst-sdk.git
+	url = git@github.com:intellekt-data/microsoft-pst-sdk.git
