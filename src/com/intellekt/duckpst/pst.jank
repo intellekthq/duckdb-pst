@@ -10,29 +10,33 @@
        (cpp/new (cpp/type "pstsdk::pst"))
        (cpp/box)))
 
-(defn pst->meta
-  [pst]
-  (let [unboxed (cpp/unbox (cpp/type "pstsdk::pst *") pst)]
-    {:name (wstring->string (cpp/.get_name unboxed))}))
-
 (defn folder->meta
   [folder]
   (let [folder (unbox-deref "pstsdk::folder *" folder)]
-    {:id (cpp/.get_id folder)
-     :name (wstring->string (cpp/.get_name folder))
-     :unread-message-count (cpp/.get_unread_message_count folder)
-     :message-count (cpp/.get_message_count folder)}))
+    {:id
+     (cpp/.get_id folder)
+     :name
+     (wstring->string (cpp/.get_name folder))
+     :unread-message-count
+     (cpp/.get_unread_message_count folder)
+     :message-count
+     (cpp/.get_message_count folder)}))
 
-(defn folder-seq
- ([pst]
-  (let [unboxed (-> (cpp/type "pstsdk::pst *") (cpp/unbox pst))
-        begin   (-> unboxed (cpp/.folder_begin) (&box))
-        end     (-> unboxed (cpp/.folder_end) (&box))]
-    (folder-seq pst begin end)))
- ([pst current end]
-  (let [unboxed-current (unbox-deref "pstsdk::pst::folder_iterator *" current)
-        unboxed-end     (unbox-deref "pstsdk::pst::folder_iterator *" end)]
-    (when (cpp/!= unboxed-current unboxed-end)
-      (let [folder (-> unboxed-current (cpp/*) (&box))
-            unboxed-next (cpp/++ unboxed-current)]
-        (cons (folder->meta folder) (folder-seq pst (&box unboxed-next) end)))))))
+; Used to iterate over folders via PST BTree nodes
+(defn-iteratorseq folder-node-seq "pstsdk::pst::folder_iterator *"
+  [& folder]
+  (folder->meta folder))
+
+; Used to iterate over folders via table entries (e.g. 'subfolders')
+(defn-iteratorseq folder-table-seq "pstsdk::folder::folder_iterator *"
+  [& folder]
+  (folder->meta folder))
+
+(defn pst->meta
+  [pst]
+  (let [u-pst (cpp/unbox (cpp/type "pstsdk::pst *") pst)]
+    {:name
+     (wstring->string (cpp/.get_name u-pst))
+     :folders
+     (folder-node-seq (-> u-pst cpp/.folder_begin &box)
+                      (-> u-pst cpp/.folder_end &box))}))

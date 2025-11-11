@@ -33,6 +33,19 @@
   `(cpp/cast (cpp/type "bool")
              (cpp/! ~p)))
 
+(defmacro defn-iteratorseq
+  "Convenience for defining a function taking two iterators to yield a seq"
+  [name pointer-type bindings & body]
+  `(defn ~name
+     [begin# end#]
+     (let [u-current# (unbox-deref ~pointer-type begin#)
+           u-end#     (unbox-deref ~pointer-type end#)]
+       (when (cpp/!= u-current# u-end#)
+         (let [~(last bindings) (-> u-current# (cpp/*) (&box))
+               x# (do ~@body)
+               next#   (cpp/++ u-current#)]
+           (cons x# (~name (&box next#) end#)))))))
+
 (defmacro when-let*
   ([bindings & body]
    (if (seq bindings)

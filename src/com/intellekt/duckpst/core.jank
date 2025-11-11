@@ -5,17 +5,4 @@
   "I don't do a whole lot ... yet."
   [& args]
   (let [pst (p/->pst (first args))]
-    (println (p/pst->meta pst))
-    (doseq [folder (p/folder-seq pst)]
-      (println folder))))
-
-(comment
-  (let [path "microsoft-pst-sdk/sourceCode/fairport/trunk/test/sample1.pst"
-        pst (p/->pst path)]
-    (println (p/folder-seq pst))
-    (doseq [folder (p/folder-seq pst)]
-      (println (p/folder->meta folder))))
-
-  (let [path "microsoft-pst-sdk/sourceCode/fairport/trunk/test/sample1.pst"
-        pst (p/->pst "microsoft-pst-sdk/sourceCode/fairport/trunk/test/sample1.pst")]
-    (println (p/folder-seq (p/->pst "microsoft-pst-sdk/sourceCode/fairport/trunk/test/sample1.pst")))))
+    (println (p/pst->meta pst))))

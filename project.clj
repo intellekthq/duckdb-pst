@@ -6,10 +6,11 @@
   :plugins [[org.jank-lang/lein-jank "0.2"]]
   :dependencies [[org.clojure/clojure "1.11.1"]]
   :main ^:skip-aot com.intellekt.duckpst
-  :jank {:include-dirs ["/opt/homebrew/lib/jank/0.1/include/c++/v1"
-                        "microsoft-pst-sdk/sourceCode/fairport/trunk"
+  :jank {:include-dirs ["/usr/local/lib/jank/0.1/include"
+                        "microsoft-pst-sdk/"
                         "/opt/homebrew/include"
-                        "src/cxx/include"]
+                        "src/cxx/include"
+                        "duckdb/src/include"]
          :library-dirs ["/opt/homebrew/lib"]}
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all
