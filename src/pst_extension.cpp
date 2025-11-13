@@ -1,62 +1,42 @@
 #define DUCKDB_EXTENSION_MAIN
 
+#include "pst_table_function.hpp"
 #include "pst_extension.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
-#include "duckdb/function/scalar_function.hpp"
+#include "duckdb/function/table_function.hpp"
+
+
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
-// OpenSSL linked through vcpkg
-#include <openssl/opensslv.h>
-
 namespace duckdb {
+	using namespace intellekt;
 
-inline void PstScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
-	auto &name_vector = args.data[0];
-	UnaryExecutor::Execute<string_t, string_t>(name_vector, result, args.size(), [&](string_t name) {
-		return StringVector::AddString(result, "PST " + name.GetString() + " 📧");
-	});
+	static void LoadInternal(ExtensionLoader &loader) {
+		TableFunction read_pst("read_pst", {LogicalType::VARCHAR}, duckpst::PSTReadFunction, duckpst::PSTReadBind);
+
+		loader.RegisterFunction(read_pst);
+	}
+
+	void PstExtension::Load(ExtensionLoader &loader) {
+		LoadInternal(loader);
+	}
+
+	std::string PstExtension::Name() {
+		return "pst";
+	}
+
+	std::string PstExtension::Version() const {
+		#ifdef EXT_VERSION_PST
+			return EXT_VERSION_PST;
+		#else
+			return "";
+		#endif
+	}
 }
-
-inline void PstOpenSSLVersionScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {
-	auto &name_vector = args.data[0];
-	UnaryExecutor::Execute<string_t, string_t>(name_vector, result, args.size(), [&](string_t name) {
-		return StringVector::AddString(result, "PST " + name.GetString() + ", my linked OpenSSL version is " +
-		                                           OPENSSL_VERSION_TEXT);
-	});
-}
-
-static void LoadInternal(ExtensionLoader &loader) {
-	// Register a scalar function
-	auto pst_scalar_function = ScalarFunction("pst", {LogicalType::VARCHAR}, LogicalType::VARCHAR, PstScalarFun);
-	loader.RegisterFunction(pst_scalar_function);
-
-	// Register another scalar function
-	auto pst_openssl_version_scalar_function = ScalarFunction("pst_openssl_version", {LogicalType::VARCHAR},
-	                                                            LogicalType::VARCHAR, PstOpenSSLVersionScalarFun);
-	loader.RegisterFunction(pst_openssl_version_scalar_function);
-}
-
-void PstExtension::Load(ExtensionLoader &loader) {
-	LoadInternal(loader);
-}
-std::string PstExtension::Name() {
-	return "pst";
-}
-
-std::string PstExtension::Version() const {
-#ifdef EXT_VERSION_PST
-	return EXT_VERSION_PST;
-#else
-	return "";
-#endif
-}
-
-} // namespace duckdb
 
 extern "C" {
-
-DUCKDB_CPP_EXTENSION_ENTRY(pst, loader) {
-	duckdb::LoadInternal(loader);
-}
+	DUCKDB_CPP_EXTENSION_ENTRY(pst, loader) {
+		duckdb::LoadInternal(loader);
+	}
 }
