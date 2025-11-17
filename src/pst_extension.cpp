@@ -12,11 +12,16 @@ namespace duckdb {
 using namespace intellekt;
 
 static void LoadInternal(ExtensionLoader &loader) {
-	TableFunction read_pst("read_pst", {LogicalType::VARCHAR}, duckpst::PSTReadFunction, duckpst::PSTReadBind,
-	                       duckpst::PSTReadInitGlobal, duckpst::PSTReadInitLocal);
-	read_pst.cardinality = duckpst::PSTReadCardinality;
+	TableFunction read_pst_folders("read_pst_folders", {LogicalType::VARCHAR}, duckpst::PSTReadFunction,
+	                               duckpst::PSTReadBind, duckpst::PSTReadInitGlobal, duckpst::PSTReadInitLocal);
+	read_pst_folders.cardinality = duckpst::PSTReadCardinality;
 
-	loader.RegisterFunction(read_pst);
+	TableFunction read_pst_messages("read_pst_messages", {LogicalType::VARCHAR}, duckpst::PSTReadFunction,
+	                                duckpst::PSTReadBind, duckpst::PSTReadInitGlobal, duckpst::PSTReadInitLocal);
+	read_pst_messages.cardinality = duckpst::PSTReadCardinality;
+
+	loader.RegisterFunction(read_pst_folders);
+	loader.RegisterFunction(read_pst_messages);
 }
 
 void PstExtension::Load(ExtensionLoader &loader) {
