@@ -54,6 +54,7 @@ static const auto SENSITIVITY_ENUM = SensitivitySchema();
 static const auto ATTACH_METHOD_ENUM = AttachMethodSchema();
 
 static const auto RECIPIENT_SCHEMA = LogicalType::STRUCT({{"name", LogicalType::VARCHAR},
+                                                          {"account_name", LogicalType::VARCHAR},
                                                           {"email_address", LogicalType::VARCHAR},
                                                           {"address_type", LogicalType::VARCHAR},
                                                           {"recipient_type", RECIPIENT_TYPE_ENUM}});

@@ -1,6 +1,7 @@
 #include "function_state.hpp"
 #include "duckdb/common/exception.hpp"
 #include "pst_schema.hpp"
+#include "pstsdk/pst/message.h"
 #include "pstsdk/util/util.h"
 #include "table_function.hpp"
 #include "utils.hpp"
@@ -238,7 +239,36 @@ idx_t PSTConcreteIteratorState<pst::message_iterator, message>::emit_rows(DataCh
 			output.SetValue(18, i, Value(nullptr));
 		}
 
-		output.SetValue(19, i, Value(nullptr));
+        // Recipients
+        vector<Value> recipients;
+        for (auto it = msg->recipient_begin(); it != msg->recipient_end(); ++it) {
+            auto recipient = *it;
+            child_list_t<Value> recipient_struct;
+            vector<Value> values;
+
+            Value account_name;
+            if (recipient.has_account_name()) {
+                account_name = Value(utils::to_utf8(recipient.get_account_name()));
+            } else {
+                account_name = Value(nullptr);
+            }
+
+            Value email_address;
+            if (recipient.has_email_address()) {
+                email_address = Value(utils::to_utf8(recipient.get_email_address()));
+            } else {
+                email_address = Value(nullptr);
+            }
+
+            values.emplace_back(Value(utils::to_utf8(recipient.get_name())));
+            values.emplace_back(account_name);
+            values.emplace_back(email_address);
+            values.emplace_back(Value(utils::to_utf8(recipient.get_address_type())));
+            values.emplace_back(Value::ENUM(recipient.get_type(), schema::RECIPIENT_TYPE_ENUM));
+
+            recipients.emplace_back(Value::STRUCT(schema::RECIPIENT_SCHEMA, values));
+        }
+        output.SetValue(19, i, Value::LIST(recipients));
 		output.SetValue(20, i, Value(nullptr));
 
 		++rows;
