@@ -108,10 +108,10 @@ idx_t PSTConcreteIteratorState<pst::folder_iterator, folder>::emit_rows(DataChun
 		}
 
 		output.SetValue(0, i, Value(current_file().path));
-		output.SetValue(1, i, Value(utils::from_wstring(current_pst()->get_name())));
+		output.SetValue(1, i, Value(utils::to_utf8(current_pst()->get_name())));
 		output.SetValue(2, i, Value::UINTEGER(folder->get_property_bag().get_node().get_parent_id()));
 		output.SetValue(3, i, Value::UINTEGER(folder->get_id()));
-		output.SetValue(4, i, Value(utils::from_wstring(folder->get_name())));
+		output.SetValue(4, i, Value(utils::to_utf8(folder->get_name())));
 		output.SetValue(5, i, Value::UINTEGER(folder->get_subfolder_count()));
 		output.SetValue(6, i, Value::BIGINT(folder->get_message_count()));
 		output.SetValue(7, i, Value::BIGINT(folder->get_unread_message_count()));
@@ -142,21 +142,23 @@ idx_t PSTConcreteIteratorState<pst::message_iterator, message>::emit_rows(DataCh
 		auto &prop_bag = msg->get_property_bag();
 
 		output.SetValue(0, i, Value(current_file().path));
-		output.SetValue(1, i, Value(utils::from_wstring(current_pst()->get_name())));
+		output.SetValue(1, i, Value(utils::to_utf8(current_pst()->get_name())));
 		output.SetValue(2, i, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
 		output.SetValue(3, i, Value::UINTEGER(msg->get_id()));
-		output.SetValue(4, i, Value(utils::from_wstring(msg->get_subject())));
+
+		// Subject
+		output.SetValue(4, i, Value(utils::read_prop_utf8(prop_bag, 0x37)));
 
 		// PidTagSenderName
 		if (prop_bag.prop_exists(0x0C1A)) {
-			output.SetValue(5, i, Value(utils::from_wstring(prop_bag.read_prop<std::wstring>(0x0C1A))));
+			output.SetValue(5, i, Value(utils::read_prop_utf8(prop_bag, 0x0C1A)));
 		} else {
 			output.SetValue(5, i, Value(nullptr));
 		}
 
 		// PidTagSenderAddress
 		if (prop_bag.prop_exists(0x0C1F)) {
-			output.SetValue(6, i, Value(utils::from_wstring(prop_bag.read_prop<std::wstring>(0x0C1F))));
+			output.SetValue(6, i, Value(utils::read_prop_utf8(prop_bag, 0x0C1F)));
 		} else {
 			output.SetValue(6, i, Value(nullptr));
 		}
@@ -172,7 +174,7 @@ idx_t PSTConcreteIteratorState<pst::message_iterator, message>::emit_rows(DataCh
 
 		// PidTagMessageClass
 		if (prop_bag.prop_exists(0x001A)) {
-			output.SetValue(8, i, Value(utils::from_wstring(prop_bag.read_prop<std::wstring>(0x001A))));
+			output.SetValue(8, i, Value(utils::read_prop_utf8(prop_bag, 0x001A)));
 		} else {
 			output.SetValue(8, i, Value(nullptr));
 		}
@@ -209,7 +211,7 @@ idx_t PSTConcreteIteratorState<pst::message_iterator, message>::emit_rows(DataCh
 		// Re-encode plaintext as UTF-8
 		try {
 			std::wstring body = msg->get_body();
-			output.SetValue(15, i, Value(utils::from_wstring(body)));
+			output.SetValue(15, i, Value(utils::to_utf8(body)));
 		} catch (...) {
 			output.SetValue(15, i, Value(nullptr));
 		}
@@ -217,21 +219,21 @@ idx_t PSTConcreteIteratorState<pst::message_iterator, message>::emit_rows(DataCh
 		// Re-encode HTML body as UTF-8
 		try {
 			std::wstring html_body = msg->get_html_body();
-			output.SetValue(16, i, Value(utils::from_wstring(html_body)));
+			output.SetValue(16, i, Value(utils::to_utf8(html_body)));
 		} catch (...) {
 			output.SetValue(16, i, Value(nullptr));
 		}
 
 		// PidTagInternetMessageId
 		if (prop_bag.prop_exists(0x1035)) {
-			output.SetValue(17, i, Value(utils::from_wstring(prop_bag.read_prop<std::wstring>(0x1035))));
+			output.SetValue(17, i, Value(utils::read_prop_utf8(prop_bag, 0x1035)));
 		} else {
 			output.SetValue(17, i, Value(nullptr));
 		}
 
 		// PidTagConversationTopic
 		if (prop_bag.prop_exists(0x0070)) {
-			output.SetValue(18, i, Value(utils::from_wstring(prop_bag.read_prop<std::wstring>(0x0070))));
+			output.SetValue(18, i, Value(utils::read_prop_utf8(prop_bag, 0x0070)));
 		} else {
 			output.SetValue(18, i, Value(nullptr));
 		}
