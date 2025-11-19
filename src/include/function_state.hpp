@@ -12,6 +12,7 @@ using namespace pstsdk;
 // The global state for any PST read is a queue of files
 class PSTReadGlobalTableFunctionState : public GlobalTableFunctionState {
 	boost::synchronized_value<queue<OpenFileInfo>> files;
+	// boost::synchronized_value<queue<node_id>> folders;
 
 public:
 	const LogicalType &output_schema;

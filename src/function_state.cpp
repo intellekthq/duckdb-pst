@@ -268,7 +268,7 @@ idx_t PSTConcreteIteratorState<pst::message_iterator, message>::emit_rows(DataCh
 
             recipients.emplace_back(Value::STRUCT(schema::RECIPIENT_SCHEMA, values));
         }
-        output.SetValue(19, i, Value::LIST(recipients));
+        output.SetValue(19, i, Value::LIST(schema::RECIPIENT_SCHEMA, recipients));
 		output.SetValue(20, i, Value(nullptr));
 
 		++rows;

@@ -9,6 +9,7 @@
 #include "duckdb/function/function.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/storage/statistics/node_statistics.hpp"
+
 #include "pst_schema.hpp"
 #include "utils.hpp"
 
@@ -36,6 +37,16 @@ PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientCo
 		files = fs.GlobFiles(path, ctx);
 	} else {
 		files.push_back(OpenFileInfo(path));
+	}
+
+	for (auto &file : files) {
+		auto pst = pstsdk::pst(utils::to_wstring(file.path));
+		vector<node_id> folders;
+		for (auto it = pst.folder_begin(); it != pst.folder_end(); ++it) {
+			folders.emplace_back(it->get_id());
+		}
+
+		pst_folders.emplace_back(std::move(folders));
 	}
 }
 
@@ -92,22 +103,30 @@ unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const Function
 	auto pst_data = data->Cast<PSTReadTableFunctionData>();
 	idx_t estimated_cardinality = 0;
 
-	// TODO
-	switch (pst_data.mode) {
-	case PSTReadFunctionMode::Folder:
-		for (auto &file : pst_data.files) {
-			pstsdk::pst pst = pstsdk::pst(utils::to_wstring(file.path));
-			estimated_cardinality += std::distance(pst.folder_begin(), pst.folder_end());
+	auto zip_iter = boost::combine(pst_data.files, pst_data.pst_folders);
+
+	// TODO: need to do a pass of "how many times do we open the file"
+	for (auto p : zip_iter) {
+		OpenFileInfo file;
+		vector<node_id> folders;
+		boost::tie(file, folders) = p;
+
+		switch (pst_data.mode) {
+			case PSTReadFunctionMode::Folder: {
+				estimated_cardinality += folders.size();
+				break;
+			}
+			case PSTReadFunctionMode::Message: {
+				auto pst = pstsdk::pst(utils::to_wstring(file.path));
+
+				for (auto folder_id : folders) {
+					auto folder = pst.open_folder(folder_id);
+					estimated_cardinality += folder.get_message_count();
+				}
+			}
+			default:
+				break;
 		}
-		break;
-	case PSTReadFunctionMode::Message:
-		for (auto &file : pst_data.files) {
-			pstsdk::pst pst = pstsdk::pst(utils::to_wstring(file.path));
-			estimated_cardinality += std::distance(pst.message_begin(), pst.message_end());
-		}
-		break;
-	default:
-		break;
 	}
 
 	auto stats = make_uniq<NodeStatistics>(estimated_cardinality);
