@@ -11,6 +11,7 @@
 #include "duckdb/storage/statistics/node_statistics.hpp"
 
 #include "pst_schema.hpp"
+#include "pstsdk/pst/folder.h"
 #include "utils.hpp"
 
 namespace intellekt::duckpst {
@@ -60,8 +61,16 @@ void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalT
 
 unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
 	auto &bind_data = const_cast<PSTReadTableFunctionData &>(input.bind_data->Cast<PSTReadTableFunctionData>());
+
+	queue<queue<node_id>> folder_queue;
+
+	for (auto &fs : bind_data.pst_folders) {
+		folder_queue.emplace(queue<node_id>({fs.begin(), fs.end()}));
+	}
+
 	auto global_state = make_uniq<PSTReadGlobalTableFunctionState>(
-	    queue<OpenFileInfo>({bind_data.files.begin(), bind_data.files.end()}), bind_data.mode, bind_data.output_schema);
+	    queue<OpenFileInfo>({bind_data.files.begin(), bind_data.files.end()}), std::move(folder_queue), bind_data.mode,
+	    bind_data.output_schema);
 
 	return global_state;
 }
@@ -69,19 +78,23 @@ unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, Table
 unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, TableFunctionInitInput &input,
                                                      GlobalTableFunctionState *global) {
 	auto &global_state = global->Cast<PSTReadGlobalTableFunctionState>();
-	auto file = global_state.take();
+	auto next = global_state.take();
 
-	if (!file)
+	if (!next)
 		return nullptr;
+
+	OpenFileInfo file;
+	node_id folder_id;
+	std::tie(file, folder_id) = *next;
 
 	unique_ptr<PSTIteratorLocalTableFunctionState> local_state;
 	switch (global_state.mode) {
 	case PSTReadFunctionMode::Folder:
-		local_state = make_uniq<PSTConcreteIteratorState<pst::folder_iterator, folder>>(std::move(*file), global_state);
+		local_state = make_uniq<PSTConcreteIteratorState<pst::folder_iterator, folder>>(std::move(file), global_state);
 		break;
 	case PSTReadFunctionMode::Message:
-		local_state =
-		    make_uniq<PSTConcreteIteratorState<pst::message_iterator, message>>(std::move(*file), global_state);
+		local_state = make_uniq<PSTConcreteIteratorState<folder::message_iterator, message>>(
+		    std::move(file), std::optional(folder_id), global_state);
 		break;
 	default:
 		break;
@@ -112,20 +125,20 @@ unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const Function
 		boost::tie(file, folders) = p;
 
 		switch (pst_data.mode) {
-			case PSTReadFunctionMode::Folder: {
-				estimated_cardinality += folders.size();
-				break;
-			}
-			case PSTReadFunctionMode::Message: {
-				auto pst = pstsdk::pst(utils::to_wstring(file.path));
+		case PSTReadFunctionMode::Folder: {
+			estimated_cardinality += folders.size();
+			break;
+		}
+		case PSTReadFunctionMode::Message: {
+			auto pst = pstsdk::pst(utils::to_wstring(file.path));
 
-				for (auto folder_id : folders) {
-					auto folder = pst.open_folder(folder_id);
-					estimated_cardinality += folder.get_message_count();
-				}
+			for (auto folder_id : folders) {
+				auto folder = pst.open_folder(folder_id);
+				estimated_cardinality += folder.get_message_count();
 			}
-			default:
-				break;
+		}
+		default:
+			break;
 		}
 	}
 

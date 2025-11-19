@@ -26,7 +26,7 @@ static const map<string, PSTReadFunctionMode> FNAME_TO_ENUM = {
 
 struct PSTReadTableFunctionData : public TableFunctionData {
 	vector<OpenFileInfo> files;
-    vector<vector<pstsdk::node_id>> pst_folders;
+	vector<vector<pstsdk::node_id>> pst_folders;
 
 public:
 	const PSTReadFunctionMode mode;

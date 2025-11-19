@@ -12,14 +12,14 @@ using namespace pstsdk;
 // The global state for any PST read is a queue of files
 class PSTReadGlobalTableFunctionState : public GlobalTableFunctionState {
 	boost::synchronized_value<queue<OpenFileInfo>> files;
-	// boost::synchronized_value<queue<node_id>> folders;
+	queue<queue<node_id>> folder_ids;
 
 public:
 	const LogicalType &output_schema;
 	const PSTReadFunctionMode mode;
 
-	PSTReadGlobalTableFunctionState(queue<OpenFileInfo> &&files, const PSTReadFunctionMode mode,
-	                                const LogicalType &output_schema);
+	PSTReadGlobalTableFunctionState(queue<OpenFileInfo> &&files, queue<queue<node_id>> &&folder_queue,
+	                                const PSTReadFunctionMode mode, const LogicalType &output_schema);
 
 	// This is an upper limit, where we are saying we're happy with one
 	// thread per file. The optimizer uses this and the cardinality estimate
@@ -27,7 +27,7 @@ public:
 
 	// NOTE: One thread per file is not guaranteed!
 	idx_t MaxThreads() const override;
-	std::optional<OpenFileInfo> take();
+	std::optional<std::pair<OpenFileInfo, node_id>> take();
 };
 
 // The local state has a PST with a reference to the global state. In the case
@@ -46,9 +46,13 @@ public:
 class PSTIteratorLocalTableFunctionState : public LocalTableFunctionState {
 protected:
 	std::optional<pst> pst;
+	std::optional<node_id> folder_id;
+
 	OpenFileInfo file;
 	PSTReadGlobalTableFunctionState &global_state;
 	PSTIteratorLocalTableFunctionState(OpenFileInfo &&file, PSTReadGlobalTableFunctionState &global_state);
+	PSTIteratorLocalTableFunctionState(OpenFileInfo &&file, std::optional<node_id> &&maybe_folder_id,
+	                                   PSTReadGlobalTableFunctionState &global_state);
 
 public:
 	virtual idx_t emit_rows(DataChunk &output) {
@@ -66,6 +70,8 @@ class PSTConcreteIteratorState : public PSTIteratorLocalTableFunctionState {
 
 public:
 	PSTConcreteIteratorState(OpenFileInfo &&file, PSTReadGlobalTableFunctionState &global_state);
+	PSTConcreteIteratorState(OpenFileInfo &&file, std::optional<node_id> &&maybe_folder_id,
+	                         PSTReadGlobalTableFunctionState &global_state);
 
 	const LogicalType &output_schema();
 	const OpenFileInfo &current_file();
