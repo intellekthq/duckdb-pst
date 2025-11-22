@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pstsdk/ltp/propbag.h"
+#include "pstsdk/ltp/table.h"
 #include <codecvt>
 #include <locale>
 #include <string>
@@ -18,9 +19,24 @@ inline std::string to_utf8(std::wstring s) {
 	return converter.to_bytes({s.begin(), s.end()});
 }
 
-// Tries to read a string out of a pbag with fallbacks. Apparently many PST
+// TODO: Tries to read a string out of a pbag with fallbacks. Apparently many PST
 // writers are careless with prop_type.
 inline std::string read_prop_utf8(pstsdk::property_bag &bag, pstsdk::prop_id id) {
+	try {
+		auto wide = bag.read_prop<std::wstring>(id);
+		return to_utf8(wide);
+	} catch (...) {
+		// TODO: surface some level of validation errors to the user with
+		//       each row, in an optional column
+	}
+
+	// Read bytes and shove them into a regular string as a last resort
+	auto buf = bag.read_prop<std::vector<pstsdk::byte>>(id);
+	std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+	return converter.to_bytes({buf.begin(), buf.end()});
+}
+
+inline std::string read_prop_utf8(pstsdk::const_table_row &bag, pstsdk::prop_id id) {
 	try {
 		auto wide = bag.read_prop<std::wstring>(id);
 		return to_utf8(wide);
