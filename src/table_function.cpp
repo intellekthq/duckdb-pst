@@ -67,8 +67,7 @@ void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalT
 unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
 
-	auto global_state =
-	    make_uniq<PSTReadGlobalTableFunctionState>(const_cast<PSTReadTableFunctionData &>(bind_data), input.column_ids);
+	auto global_state = make_uniq<PSTReadGlobalTableFunctionState>(bind_data, input.column_ids);
 
 	return global_state;
 }
@@ -101,7 +100,7 @@ unique_ptr<FunctionData> PSTReadBind(ClientContext &ctx, TableFunctionBindInput 
                                      vector<LogicalType> &return_types, vector<string> &names) {
 	auto path = input.inputs[0].GetValue<string>();
 	unique_ptr<PSTReadTableFunctionData> function_data =
-	    make_uniq<PSTReadTableFunctionData>(std::move(path), ctx, FNAME_TO_ENUM.at(input.table_function.name));
+	    make_uniq<PSTReadTableFunctionData>(std::move(path), ctx, FUNCTIONS.at(input.table_function.name));
 	function_data->bind_table_function_output_schema(return_types, names);
 	return std::move(function_data);
 }

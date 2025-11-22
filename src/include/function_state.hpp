@@ -3,6 +3,8 @@
 #include "duckdb.hpp"
 #include "duckdb/common/open_file_info.hpp"
 #include "duckdb/common/typedefs.hpp"
+#include "duckdb/common/types.hpp"
+#include "duckdb/common/unique_ptr.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "table_function.hpp"
 
@@ -43,7 +45,7 @@ class PSTReadGlobalTableFunctionState : public GlobalTableFunctionState {
 	int64_t bind_message_ids();
 
 public:
-	PSTReadGlobalTableFunctionState(PSTReadTableFunctionData &bind_data, vector<column_t> column_ids);
+	PSTReadGlobalTableFunctionState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids);
 	PSTReadFunctionMode mode;
 	vector<column_t> column_ids;
 

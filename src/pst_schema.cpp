@@ -6,7 +6,9 @@ namespace intellekt::duckpst::schema {
 template <>
 void into_row<pstsdk::folder>(PSTIteratorLocalTableFunctionState &local_state, DataChunk &output,
                               pstsdk::folder &folder, idx_t row_number) {
-	for (auto col : local_state.column_ids()) {
+	auto &column_ids = local_state.column_ids();
+	for (idx_t col_idx = 0; col_idx < column_ids.size(); ++col_idx) {
+		auto col = column_ids[col_idx];
 		switch (col) {
 		case 0:
 			output.SetValue(col, row_number, Value(local_state.current_file().path));
@@ -41,40 +43,43 @@ void into_row<pstsdk::folder>(PSTIteratorLocalTableFunctionState &local_state, D
 template <>
 void into_row<pstsdk::message>(PSTIteratorLocalTableFunctionState &local_state, DataChunk &output, pstsdk::message &msg,
                                idx_t row_number) {
+	auto &column_ids = local_state.column_ids();
 	auto &prop_bag = msg.get_property_bag();
 
-	for (auto col : local_state.column_ids()) {
+	for (idx_t col_idx = 0; col_idx < column_ids.size(); ++col_idx) {
+		auto col = column_ids[col_idx];
+
 		switch (col) {
 		case 0:
-			output.SetValue(col, row_number, Value(local_state.current_file().path));
+			output.SetValue(col_idx, row_number, Value(local_state.current_file().path));
 			break;
 		case 1:
-			output.SetValue(col, row_number, Value(utils::to_utf8(local_state.current_pst()->get_name())));
+			output.SetValue(col_idx, row_number, Value(utils::to_utf8(local_state.current_pst()->get_name())));
 			break;
 		case 2:
-			output.SetValue(col, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
+			output.SetValue(col_idx, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
 			break;
 		case 3:
-			output.SetValue(col, row_number, Value::UINTEGER(msg.get_id()));
+			output.SetValue(col_idx, row_number, Value::UINTEGER(msg.get_id()));
 			break;
 		case 4:
 			// Subject
-			output.SetValue(col, row_number, Value(utils::read_prop_utf8(prop_bag, 0x37)));
+			output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x37)));
 			break;
 		case 5:
 			// PidTagSenderName
 			if (prop_bag.prop_exists(0x0C1A)) {
-				output.SetValue(col, row_number, Value(utils::read_prop_utf8(prop_bag, 0x0C1A)));
+				output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x0C1A)));
 			} else {
-				output.SetValue(col, row_number, Value(nullptr));
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
 			break;
 		case 6:
 			// PidTagSenderAddress
 			if (prop_bag.prop_exists(0x0C1F)) {
-				output.SetValue(col, row_number, Value(utils::read_prop_utf8(prop_bag, 0x0C1F)));
+				output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x0C1F)));
 			} else {
-				output.SetValue(col, row_number, Value(nullptr));
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
 			break;
 		case 7:
@@ -82,90 +87,90 @@ void into_row<pstsdk::message>(PSTIteratorLocalTableFunctionState &local_state, 
 			if (prop_bag.prop_exists(0x0E06)) {
 				auto filetime = prop_bag.read_prop<pstsdk::ulonglong>(0x0E06);
 				time_t unixtime = pstsdk::filetime_to_time_t(filetime);
-				output.SetValue(col, row_number, Value::TIMESTAMP(timestamp_sec_t(unixtime)));
+				output.SetValue(col_idx, row_number, Value::TIMESTAMP(timestamp_sec_t(unixtime)));
 			} else {
-				output.SetValue(col, row_number, Value(nullptr));
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
 			break;
 		case 8:
 			// PidTagMessageClass
 			if (prop_bag.prop_exists(0x001A)) {
-				output.SetValue(col, row_number, Value(utils::read_prop_utf8(prop_bag, 0x001A)));
+				output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x001A)));
 			} else {
-				output.SetValue(col, row_number, Value(nullptr));
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
 			break;
 		case 9:
 			// PidTagImportance (defaults to 'normal')
 			if (prop_bag.prop_exists(0x0017)) {
 				uint32_t importance = prop_bag.read_prop<uint32_t>(0x0017);
-				output.SetValue(col, row_number, Value::ENUM(importance, schema::IMPORTANCE_ENUM));
+				output.SetValue(col_idx, row_number, Value::ENUM(importance, schema::IMPORTANCE_ENUM));
 			} else {
-				output.SetValue(col, row_number, Value(nullptr));
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
 			break;
 		case 10:
 			// PidTagSensitivity (defaults to 'none')
 			if (prop_bag.prop_exists(0x0036)) {
 				uint32_t sensitivity = prop_bag.read_prop<uint32_t>(0x0036);
-				output.SetValue(col, row_number, Value::ENUM(sensitivity, schema::SENSITIVITY_ENUM));
+				output.SetValue(col_idx, row_number, Value::ENUM(sensitivity, schema::SENSITIVITY_ENUM));
 			} else {
-				output.SetValue(col, row_number, Value(nullptr));
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
 			break;
 		case 11:
 			// PidTagMessageFlags (bitmask)
 			if (prop_bag.prop_exists(0x0E07)) {
-				output.SetValue(col, row_number, Value::UINTEGER(prop_bag.read_prop<uint32_t>(0x0E07)));
+				output.SetValue(col_idx, row_number, Value::UINTEGER(prop_bag.read_prop<uint32_t>(0x0E07)));
 			} else {
-				output.SetValue(col, row_number, Value(nullptr));
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
 			break;
 		case 12:
-			output.SetValue(col, row_number, Value::UINTEGER(msg.size()));
+			output.SetValue(col_idx, row_number, Value::UINTEGER(msg.size()));
 			break;
 		case 13: {
 			size_t attachment_count = msg.get_attachment_count();
-			output.SetValue(col, row_number, Value::BOOLEAN(attachment_count > 0));
+			output.SetValue(col_idx, row_number, Value::BOOLEAN(attachment_count > 0));
 			break;
 		}
 		case 14: {
 			size_t attachment_count = msg.get_attachment_count();
-			output.SetValue(col, row_number, Value::UINTEGER(attachment_count));
+			output.SetValue(col_idx, row_number, Value::UINTEGER(attachment_count));
 			break;
 		}
 		case 15:
 			// Re-encode plaintext as UTF-8
 			try {
 				std::wstring body = msg.get_body();
-				output.SetValue(col, row_number, Value(utils::to_utf8(body)));
+				output.SetValue(col_idx, row_number, Value(utils::to_utf8(body)));
 			} catch (...) {
-				output.SetValue(col, row_number, Value(nullptr));
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
 			break;
 		case 16:
 			// Re-encode HTML body as UTF-8
 			try {
 				std::wstring html_body = msg.get_html_body();
-				output.SetValue(col, row_number, Value(utils::to_utf8(html_body)));
+				output.SetValue(col_idx, row_number, Value(utils::to_utf8(html_body)));
 			} catch (...) {
-				output.SetValue(col, row_number, Value(nullptr));
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
 			break;
 		case 17:
 			// PidTagInternetMessageId
 			if (prop_bag.prop_exists(0x1035)) {
-				output.SetValue(col, row_number, Value(utils::read_prop_utf8(prop_bag, 0x1035)));
+				output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x1035)));
 			} else {
-				output.SetValue(col, row_number, Value(nullptr));
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
 			break;
 		case 18:
 			// PidTagConversationTopic
 			if (prop_bag.prop_exists(0x0070)) {
-				output.SetValue(col, row_number, Value(utils::read_prop_utf8(prop_bag, 0x0070)));
+				output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x0070)));
 			} else {
-				output.SetValue(col, row_number, Value(nullptr));
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
 			break;
 		case 19: {
@@ -202,7 +207,7 @@ void into_row<pstsdk::message>(PSTIteratorLocalTableFunctionState &local_state, 
 
 				recipients.emplace_back(Value::STRUCT(schema::RECIPIENT_SCHEMA, values));
 			}
-			output.SetValue(col, row_number, Value::LIST(schema::RECIPIENT_SCHEMA, recipients));
+			output.SetValue(col_idx, row_number, Value::LIST(schema::RECIPIENT_SCHEMA, recipients));
 			break;
 		}
 		case 20: {
@@ -226,7 +231,7 @@ void into_row<pstsdk::message>(PSTIteratorLocalTableFunctionState &local_state, 
 			//     attachments.emplace_back(Value::STRUCT(schema::ATTACHMENT_SCHEMA, values));
 			// }
 
-			output.SetValue(col, row_number, Value::LIST(schema::ATTACHMENT_SCHEMA, attachments));
+			output.SetValue(col_idx, row_number, Value::LIST(schema::ATTACHMENT_SCHEMA, attachments));
 			break;
 		}
 		default:

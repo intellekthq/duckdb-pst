@@ -19,7 +19,7 @@ using namespace pstsdk;
 
 enum PSTReadFunctionMode { Folder, Message, NUM_SHAPES };
 
-static const map<string, PSTReadFunctionMode> FNAME_TO_ENUM = {
+static const map<string, PSTReadFunctionMode> FUNCTIONS = {
     {"read_pst_folders", Folder},
     {"read_pst_messages", Message},
 };

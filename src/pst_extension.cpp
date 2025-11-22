@@ -12,18 +12,22 @@ namespace duckdb {
 using namespace intellekt;
 
 static void LoadInternal(ExtensionLoader &loader) {
-	TableFunction read_pst_folders("read_pst_folders", {LogicalType::VARCHAR}, duckpst::PSTReadFunction,
-	                               duckpst::PSTReadBind, duckpst::PSTReadInitGlobal, duckpst::PSTReadInitLocal);
-	read_pst_folders.cardinality = duckpst::PSTReadCardinality;
-	read_pst_folders.table_scan_progress = duckpst::PSTReadProgress;
+	TableFunction proto("default", {LogicalType::VARCHAR}, duckpst::PSTReadFunction);
 
-	TableFunction read_pst_messages("read_pst_messages", {LogicalType::VARCHAR}, duckpst::PSTReadFunction,
-	                                duckpst::PSTReadBind, duckpst::PSTReadInitGlobal, duckpst::PSTReadInitLocal);
-	read_pst_messages.cardinality = duckpst::PSTReadCardinality;
-	read_pst_messages.table_scan_progress = duckpst::PSTReadProgress;
+	proto.bind = duckpst::PSTReadBind;
+	proto.cardinality = duckpst::PSTReadCardinality;
+	proto.init_global = duckpst::PSTReadInitGlobal;
+	proto.init_local = duckpst::PSTReadInitLocal;
+	proto.table_scan_progress = duckpst::PSTReadProgress;
+	proto.projection_pushdown = true;
 
-	loader.RegisterFunction(read_pst_folders);
-	loader.RegisterFunction(read_pst_messages);
+	for (auto pair : duckpst::FUNCTIONS) {
+		TableFunction concrete = proto;
+		auto &[name, _mode] = pair;
+
+		concrete.name = name;
+		loader.RegisterFunction(concrete);
+	}
 }
 
 void PstExtension::Load(ExtensionLoader &loader) {

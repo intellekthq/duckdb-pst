@@ -16,9 +16,9 @@ using namespace duckdb;
 using namespace pstsdk;
 
 // PSTReadGlobalTableFunctionState
-PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(PSTReadTableFunctionData &bind_data,
+PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(const PSTReadTableFunctionData &bind_data,
                                                                  vector<column_t> column_ids)
-    : mode(bind_data.mode), total_files(bind_data.files.size()), column_ids(std::move(column_ids)) {
+    : mode(bind_data.mode), column_ids(std::move(column_ids)), total_files(bind_data.files.size()) {
 	for (auto &file : bind_data.files) {
 		files->push(file);
 	}
@@ -98,7 +98,7 @@ idx_t PSTReadGlobalTableFunctionState::MaxThreads() const {
 		break;
 	}
 
-	return threads;
+	return std::max<idx_t>(threads, 1);
 }
 
 std::optional<OpenFileInfo> PSTReadGlobalTableFunctionState::take_file() {
