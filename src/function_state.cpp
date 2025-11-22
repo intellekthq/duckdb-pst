@@ -1,7 +1,10 @@
 #include "function_state.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/open_file_info.hpp"
 #include "pst_schema.hpp"
+#include "pstsdk/pst/folder.h"
 #include "pstsdk/pst/message.h"
+#include "pstsdk/util/primitives.h"
 #include "table_function.hpp"
 #include "utils.hpp"
 #include <optional>
@@ -25,20 +28,28 @@ idx_t PSTReadGlobalTableFunctionState::MaxThreads() const {
 }
 
 std::optional<std::pair<OpenFileInfo, node_id>> PSTReadGlobalTableFunctionState::take() {
-	auto sync_files = files.synchronize();
-	if (sync_files->empty())
+	auto sync_files = files.unique_synchronize();
+
+	if (sync_files->empty() || folder_ids.empty())
 		return {};
+
+	if (folder_ids.front().empty()) {
+		folder_ids.pop();
+		sync_files->pop();
+		return take();
+	}
 
 	auto file = sync_files->front();
 	auto folder_id = folder_ids.front().front();
-
 	folder_ids.front().pop();
 
 	if (folder_ids.front().empty() || mode == PSTReadFunctionMode::Folder) {
 		sync_files->pop();
+		if (!folder_ids.empty())
+			folder_ids.pop();
 	}
 
-	return std::make_pair(file, folder_id);
+	return std::make_pair(std::move(file), std::move(folder_id));
 }
 
 // PSTIteratorLocalTableFunctionState
@@ -48,14 +59,16 @@ PSTIteratorLocalTableFunctionState::PSTIteratorLocalTableFunctionState(OpenFileI
     : file(file), folder_id(maybe_folder_id), global_state(global_state) {
 }
 
+// Per folder iterator
 template <typename it, typename t>
 PSTConcreteIteratorState<it, t>::PSTConcreteIteratorState(OpenFileInfo &&file, std::optional<node_id> &&maybe_folder_id,
                                                           PSTReadGlobalTableFunctionState &global_state)
     : PSTIteratorLocalTableFunctionState(std::move(file), std::move(maybe_folder_id), global_state) {
-	pst.emplace(pstsdk::pst(utils::to_wstring(file.path)));
+	pst.emplace(pstsdk::pst(utils::to_wstring(this->file.path)));
 	bind_iter();
 }
 
+// Per file iterator
 template <typename it, typename t>
 PSTConcreteIteratorState<it, t>::PSTConcreteIteratorState(OpenFileInfo &&file,
                                                           PSTReadGlobalTableFunctionState &global_state)
@@ -64,8 +77,14 @@ PSTConcreteIteratorState<it, t>::PSTConcreteIteratorState(OpenFileInfo &&file,
 
 template <typename it, typename t>
 std::optional<t> PSTConcreteIteratorState<it, t>::next() {
-	if (finished() && !bind_next())
+	// If the current state is finished, keep going until we can keep binding
+	while (finished() && bind_next()) {
+	}
+
+	// If we can't bind anymore and are finished, we're really finished
+	if (finished())
 		return {};
+
 	t x = **current;
 	++(*current);
 	return x;
@@ -81,15 +100,12 @@ bool PSTConcreteIteratorState<it, t>::bind_next() {
 	if (!next)
 		return false;
 
-	OpenFileInfo next_file;
-	node_id next_folder_id;
-
-	std::tie(file, next_folder_id) = *next;
+	auto &[next_file, next_folder_id] = *next;
 
 	file = std::move(next_file);
-	folder_id = std::move(next_folder_id);
+	folder_id = next_folder_id;
+	pst.emplace(pstsdk::pst(utils::to_wstring(file.path)));
 
-	pst.emplace(pstsdk::pst(utils::to_wstring(next_file.path)));
 	bind_iter();
 
 	return true;
@@ -100,18 +116,15 @@ const bool PSTConcreteIteratorState<it, t>::finished() {
 	return (!current) || (current == end);
 }
 
-template <typename it, typename t>
-const std::optional<class pst> &PSTConcreteIteratorState<it, t>::current_pst() {
+const std::optional<class pst> &PSTIteratorLocalTableFunctionState::current_pst() {
 	return pst;
 }
 
-template <typename it, typename t>
-const OpenFileInfo &PSTConcreteIteratorState<it, t>::current_file() {
+const OpenFileInfo &PSTIteratorLocalTableFunctionState::current_file() {
 	return file;
 }
 
-template <typename it, typename t>
-const LogicalType &PSTConcreteIteratorState<it, t>::output_schema() {
+const LogicalType &PSTIteratorLocalTableFunctionState::output_schema() {
 	return global_state.output_schema;
 }
 
@@ -121,11 +134,12 @@ idx_t PSTConcreteIteratorState<it, t>::emit_rows(DataChunk &output) {
 
 	for (idx_t i = 0; i < STANDARD_VECTOR_SIZE; ++i) {
 		auto item = next();
+
 		if (!item) {
 			break;
 		}
 
-		schema::into_row<t>(output, *item, i);
+		schema::into_row<t>(*this, output, *item, i);
 
 		++rows;
 	}

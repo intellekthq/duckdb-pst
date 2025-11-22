@@ -18,6 +18,9 @@ namespace intellekt::duckpst {
 using namespace duckdb;
 using namespace pstsdk;
 
+// Instantiates PST read table function data:
+// - Bind schema based on called table function name
+// - Glob over provided path and enumerate PSTs + their folder IDs
 PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientContext &ctx,
                                                    const PSTReadFunctionMode mode)
     : mode(mode), output_schema(*[&]() {
@@ -59,9 +62,9 @@ void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalT
 	}
 }
 
+// Load enumerated function state data into queues for spooler state
 unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
-	auto &bind_data = const_cast<PSTReadTableFunctionData &>(input.bind_data->Cast<PSTReadTableFunctionData>());
-
+	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
 	queue<queue<node_id>> folder_queue;
 
 	for (auto &fs : bind_data.pst_folders) {
@@ -75,6 +78,7 @@ unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, Table
 	return global_state;
 }
 
+// Local function states can spool different files, or concurrently spool different folders from the same file
 unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, TableFunctionInitInput &input,
                                                      GlobalTableFunctionState *global) {
 	auto &global_state = global->Cast<PSTReadGlobalTableFunctionState>();
@@ -83,9 +87,7 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 	if (!next)
 		return nullptr;
 
-	OpenFileInfo file;
-	node_id folder_id;
-	std::tie(file, folder_id) = *next;
+	auto &[file, folder_id] = *next;
 
 	unique_ptr<PSTIteratorLocalTableFunctionState> local_state;
 	switch (global_state.mode) {
@@ -112,17 +114,16 @@ unique_ptr<FunctionData> PSTReadBind(ClientContext &ctx, TableFunctionBindInput 
 	return std::move(function_data);
 }
 
+// Mount files from function data and count the number of folders/messages for cardinality estimates.
+// Folders: we already enumerated them when making function data state
+// Messages: we read the pbag attribute with a count instead of walking the iterator
 unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const FunctionData *data) {
 	auto pst_data = data->Cast<PSTReadTableFunctionData>();
 	idx_t estimated_cardinality = 0;
 
-	auto zip_iter = boost::combine(pst_data.files, pst_data.pst_folders);
-
 	// TODO: need to do a pass of "how many times do we open the file"
-	for (auto p : zip_iter) {
-		OpenFileInfo file;
-		vector<node_id> folders;
-		boost::tie(file, folders) = p;
+	for (auto p : boost::combine(pst_data.files, pst_data.pst_folders)) {
+		auto &[file, folders] = p;
 
 		switch (pst_data.mode) {
 		case PSTReadFunctionMode::Folder: {
@@ -136,6 +137,8 @@ unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const Function
 				auto folder = pst.open_folder(folder_id);
 				estimated_cardinality += folder.get_message_count();
 			}
+
+			break;
 		}
 		default:
 			break;

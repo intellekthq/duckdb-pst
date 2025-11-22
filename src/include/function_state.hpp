@@ -1,3 +1,5 @@
+#pragma once
+
 #include "duckdb.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "table_function.hpp"
@@ -58,6 +60,10 @@ public:
 	virtual idx_t emit_rows(DataChunk &output) {
 		return 0;
 	}
+
+	const OpenFileInfo &current_file();
+	const std::optional<class pst> &current_pst();
+	const LogicalType &output_schema();
 };
 
 template <typename it, typename t>
@@ -73,9 +79,6 @@ public:
 	PSTConcreteIteratorState(OpenFileInfo &&file, std::optional<node_id> &&maybe_folder_id,
 	                         PSTReadGlobalTableFunctionState &global_state);
 
-	const LogicalType &output_schema();
-	const OpenFileInfo &current_file();
-	const std::optional<class pst> &current_pst();
 	const bool finished();
 
 	std::optional<t> next();

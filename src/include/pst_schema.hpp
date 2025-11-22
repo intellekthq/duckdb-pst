@@ -1,9 +1,9 @@
 #pragma once
 
+#include "function_state.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/types/data_chunk.hpp"
 #include "duckdb/common/types/vector.hpp"
-#include "pstsdk/pst/message.h"
 
 // Everything that we want to emit as a row or column
 namespace intellekt::duckpst::schema {
@@ -104,6 +104,6 @@ static const auto FOLDER_SCHEMA = LogicalType::STRUCT({
 });
 
 template <typename Item>
-void into_row(DataChunk &output, Item &item, idx_t row_number);
+void into_row(PSTIteratorLocalTableFunctionState &local_state, DataChunk &output, Item &item, idx_t row_number);
 
 } // namespace intellekt::duckpst::schema
