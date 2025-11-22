@@ -52,6 +52,7 @@ class PSTIteratorLocalTableFunctionState : public LocalTableFunctionState {
 protected:
 	std::optional<pst> pst;
 	std::optional<node_id> folder_id;
+	std::optional<vector<node_id>> batch;
 
 	OpenFileInfo file;
 	PSTReadGlobalTableFunctionState &global_state;
@@ -74,7 +75,6 @@ class PSTConcreteIteratorState : public PSTIteratorLocalTableFunctionState {
 protected:
 	std::optional<it> current;
 	std::optional<it> end;
-	std::optional<vector<node_id>> batch;
 
 	bool bind_next();
 	void bind_iter();
