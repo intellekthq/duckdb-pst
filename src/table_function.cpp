@@ -66,7 +66,9 @@ void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalT
 // Load enumerated function state data into queues for spooler state
 unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-	auto global_state = make_uniq<PSTReadGlobalTableFunctionState>(const_cast<PSTReadTableFunctionData &>(bind_data));
+
+	auto global_state =
+	    make_uniq<PSTReadGlobalTableFunctionState>(const_cast<PSTReadTableFunctionData &>(bind_data), input.column_ids);
 
 	return global_state;
 }
@@ -140,7 +142,7 @@ unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const Function
 }
 
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
-                                               const GlobalTableFunctionState *global_state) {
+                       const GlobalTableFunctionState *global_state) {
 	auto &pst_state = global_state->Cast<PSTReadGlobalTableFunctionState>();
 	return pst_state.progress();
 }

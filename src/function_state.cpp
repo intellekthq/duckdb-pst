@@ -16,8 +16,9 @@ using namespace duckdb;
 using namespace pstsdk;
 
 // PSTReadGlobalTableFunctionState
-PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(PSTReadTableFunctionData &bind_data)
-    : mode(bind_data.mode), total_files(bind_data.files.size()) {
+PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(PSTReadTableFunctionData &bind_data,
+                                                                 vector<column_t> column_ids)
+    : mode(bind_data.mode), total_files(bind_data.files.size()), column_ids(std::move(column_ids)) {
 	for (auto &file : bind_data.files) {
 		files->push(file);
 	}
@@ -32,7 +33,8 @@ PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(PSTReadTableFun
 		auto bound = 0;
 		while (bound < 1) {
 			bound = this->bind_message_ids();
-			if (bound < 0) break;
+			if (bound < 0)
+				break;
 		}
 	}
 }
@@ -68,12 +70,14 @@ int64_t PSTReadGlobalTableFunctionState::bind_message_ids() {
 }
 
 double PSTReadGlobalTableFunctionState::progress() const {
-	if (total_files < 1) return 100.0;
+	if (total_files < 1)
+		return 100.0;
 
 	double remain = files->size();
-	if (current_file.has_value()) ++remain;
+	if (current_file.has_value())
+		++remain;
 
-	return (100.0 * (1.0 - (remain/total_files)));
+	return (100.0 * (1.0 - (remain / total_files)));
 }
 
 idx_t PSTReadGlobalTableFunctionState::MaxThreads() const {
@@ -99,7 +103,8 @@ idx_t PSTReadGlobalTableFunctionState::MaxThreads() const {
 
 std::optional<OpenFileInfo> PSTReadGlobalTableFunctionState::take_file() {
 	auto sync_files = files.unique_synchronize();
-	if (sync_files->empty()) return {};
+	if (sync_files->empty())
+		return {};
 
 	auto file = sync_files->front();
 	sync_files->pop();
@@ -132,10 +137,12 @@ std::optional<std::pair<OpenFileInfo, node_id>> PSTReadGlobalTableFunctionState:
 }
 
 std::optional<std::pair<OpenFileInfo, vector<node_id>>> PSTReadGlobalTableFunctionState::take_messages(idx_t n) {
-	if (!current_message_ids->has_value()) return {};
+	if (!current_message_ids->has_value())
+		return {};
 
 	while (current_message_ids.value()->size() < 1) {
-		if (bind_message_ids() < 0) break;
+		if (bind_message_ids() < 0)
+			break;
 	}
 
 	auto messages = current_message_ids.unique_synchronize();
@@ -159,6 +166,10 @@ std::optional<std::pair<OpenFileInfo, vector<node_id>>> PSTReadGlobalTableFuncti
 // PSTIteratorLocalTableFunctionState
 PSTIteratorLocalTableFunctionState::PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state)
     : global_state(global_state) {
+}
+
+const vector<column_t> &PSTIteratorLocalTableFunctionState::column_ids() {
+	return global_state.column_ids;
 }
 
 // PSTConcreteIteratorState

@@ -50,7 +50,7 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const FunctionData *data);
 
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
-                                               const GlobalTableFunctionState *global_state);
+                       const GlobalTableFunctionState *global_state);
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output);
 } // namespace intellekt::duckpst
