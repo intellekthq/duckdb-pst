@@ -122,9 +122,8 @@ void into_row<pstsdk::message>(PSTIteratorLocalTableFunctionState &local_state, 
 	vector<Value> recipients;
 	for (auto it = msg.recipient_begin(); it != msg.recipient_end(); ++it) {
 		auto recipient = *it;
-        auto recipient_prop_bag = recipient.get_property_row();
+		auto recipient_prop_bag = recipient.get_property_row();
 
-		child_list_t<Value> recipient_struct;
 		vector<Value> values;
 
 		Value account_name;
@@ -141,18 +140,39 @@ void into_row<pstsdk::message>(PSTIteratorLocalTableFunctionState &local_state, 
 			email_address = Value(nullptr);
 		}
 
-        // Recipient display name
+		// Recipient display name
 		values.emplace_back(Value(utils::read_prop_utf8(recipient_prop_bag, 0x3001)));
 		values.emplace_back(account_name);
 		values.emplace_back(email_address);
 
-        // Address type
+		// Address type
 		values.emplace_back(Value(utils::read_prop_utf8(recipient_prop_bag, 0x3002)));
 		values.emplace_back(Value::ENUM(recipient.get_type(), schema::RECIPIENT_TYPE_ENUM));
 
 		recipients.emplace_back(Value::STRUCT(schema::RECIPIENT_SCHEMA, values));
 	}
 	output.SetValue(19, row_number, Value::LIST(schema::RECIPIENT_SCHEMA, recipients));
-	output.SetValue(20, row_number, Value(nullptr));
+
+	vector<Value> attachments;
+	// for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
+	//     auto attachment = *it;
+	//     auto attachment_prop_bag = attachment.get_property_bag();
+
+	//     vector<Value> values;
+	//     try {
+	//         values.emplace_back(Value(utils::read_prop_utf8(attachment_prop_bag, 0x3707)));
+	//     } catch (...) {
+	//         values.emplace_back(Value(utils::read_prop_utf8(attachment_prop_bag, 0x3704)));
+	//     }
+	//     values.emplace_back(Value::UBIGINT(attachment.size()));
+	//     values.emplace_back(Value(attachment.is_message()));
+
+	//     auto attachment_bytes = attachment.get_bytes();
+	//     values.emplace_back(Value::BLOB_RAW({attachment_bytes.begin(), attachment_bytes.end()}));
+
+	//     attachments.emplace_back(Value::STRUCT(schema::ATTACHMENT_SCHEMA, values));
+	// }
+
+	output.SetValue(20, row_number, Value::LIST(schema::ATTACHMENT_SCHEMA, attachments));
 }
 } // namespace intellekt::duckpst::schema

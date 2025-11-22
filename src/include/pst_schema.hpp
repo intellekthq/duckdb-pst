@@ -62,13 +62,9 @@ static const auto RECIPIENT_SCHEMA = LogicalType::STRUCT({{"name", LogicalType::
                                                           {"recipient_type", RECIPIENT_TYPE_ENUM}});
 
 static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({{"filename", LogicalType::VARCHAR},
-                                                           {"long_filename", LogicalType::VARCHAR},
-                                                           {"extension", LogicalType::VARCHAR},
-                                                           {"mime_type", LogicalType::VARCHAR},
                                                            {"size", LogicalType::UBIGINT},
                                                            {"is_message", LogicalType::BOOLEAN},
-                                                           {"content_id", LogicalType::VARCHAR},
-                                                           {"attach_method", ATTACH_METHOD_ENUM}});
+                                                           {"bytes", LogicalType::BLOB}});
 
 static const auto MESSAGE_SCHEMA = LogicalType::STRUCT({{"pst_path", LogicalType::VARCHAR},
                                                         {"pst_name", LogicalType::VARCHAR},
