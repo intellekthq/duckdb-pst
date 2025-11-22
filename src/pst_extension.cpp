@@ -15,10 +15,12 @@ static void LoadInternal(ExtensionLoader &loader) {
 	TableFunction read_pst_folders("read_pst_folders", {LogicalType::VARCHAR}, duckpst::PSTReadFunction,
 	                               duckpst::PSTReadBind, duckpst::PSTReadInitGlobal, duckpst::PSTReadInitLocal);
 	read_pst_folders.cardinality = duckpst::PSTReadCardinality;
+	read_pst_folders.table_scan_progress = duckpst::PSTReadProgress;
 
 	TableFunction read_pst_messages("read_pst_messages", {LogicalType::VARCHAR}, duckpst::PSTReadFunction,
 	                                duckpst::PSTReadBind, duckpst::PSTReadInitGlobal, duckpst::PSTReadInitLocal);
 	read_pst_messages.cardinality = duckpst::PSTReadCardinality;
+	read_pst_messages.table_scan_progress = duckpst::PSTReadProgress;
 
 	loader.RegisterFunction(read_pst_folders);
 	loader.RegisterFunction(read_pst_messages);

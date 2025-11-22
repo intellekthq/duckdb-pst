@@ -1,7 +1,7 @@
 #include "table_function.hpp"
 #include "duckdb/common/exception.hpp"
-#include "duckdb/common/vector_size.hpp"
 #include "duckdb/function/table_function.hpp"
+#include "duckdb/main/client_data.hpp"
 #include "function_state.hpp"
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/common/helper.hpp"
@@ -39,19 +39,19 @@ PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientCo
 	auto &fs = FileSystem::GetFileSystem(ctx);
 
 	if (FileSystem::HasGlob(path)) {
-		files = fs.GlobFiles(path, ctx);
+		files = std::move(fs.GlobFiles(path, ctx));
 	} else {
 		files.push_back(OpenFileInfo(path));
 	}
 
 	for (auto &file : files) {
-		auto pst = pstsdk::pst(utils::to_wstring(file.path));
 		vector<node_id> folders;
+		auto pst = pstsdk::pst(utils::to_wstring(file.path));
 		for (auto it = pst.folder_begin(); it != pst.folder_end(); ++it) {
 			folders.emplace_back(it->get_id());
 		}
 
-		pst_folders.emplace_back(std::move(folders));
+		this->pst_folders.push_back(std::move(folders));
 	}
 }
 
@@ -66,15 +66,7 @@ void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalT
 // Load enumerated function state data into queues for spooler state
 unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-	queue<queue<node_id>> folder_queue;
-
-	for (auto &fs : bind_data.pst_folders) {
-		folder_queue.emplace(queue<node_id>({fs.begin(), fs.end()}));
-	}
-
-	auto global_state = make_uniq<PSTReadGlobalTableFunctionState>(
-	    queue<OpenFileInfo>({bind_data.files.begin(), bind_data.files.end()}), std::move(folder_queue), bind_data.mode,
-	    bind_data.output_schema);
+	auto global_state = make_uniq<PSTReadGlobalTableFunctionState>(const_cast<PSTReadTableFunctionData &>(bind_data));
 
 	return global_state;
 }
@@ -82,11 +74,12 @@ unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, Table
 // Local function states can spool different files, or concurrently spool different folders from the same file
 unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, TableFunctionInitInput &input,
                                                      GlobalTableFunctionState *global) {
+	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
 	auto &global_state = global->Cast<PSTReadGlobalTableFunctionState>();
 
 	unique_ptr<PSTIteratorLocalTableFunctionState> local_state = nullptr;
 
-	switch (global_state.mode) {
+	switch (bind_data.mode) {
 	case PSTReadFunctionMode::Folder:
 		local_state = make_uniq<PSTConcreteIteratorState<pst::folder_iterator, folder>>(global_state);
 		break;
@@ -142,8 +135,14 @@ unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const Function
 		}
 	}
 
-	auto stats = make_uniq<NodeStatistics>(estimated_cardinality * 100);
+	auto stats = make_uniq<NodeStatistics>(estimated_cardinality);
 	return std::move(stats);
+}
+
+double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
+                                               const GlobalTableFunctionState *global_state) {
+	auto &pst_state = global_state->Cast<PSTReadGlobalTableFunctionState>();
+	return pst_state.progress();
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output) {

@@ -16,21 +16,33 @@ using namespace duckdb;
 using namespace pstsdk;
 
 // PSTReadGlobalTableFunctionState
-PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(queue<OpenFileInfo> &&files,
-                                                                 queue<queue<node_id>> &&folder_queue,
-                                                                 const PSTReadFunctionMode mode,
-                                                                 const LogicalType &output_schema)
-    : files(boost::synchronized_value<queue<OpenFileInfo>>(files)), folder_ids(folder_queue), mode(mode),
-      output_schema(output_schema) {
+PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(PSTReadTableFunctionData &bind_data)
+    : mode(bind_data.mode), total_files(bind_data.files.size()) {
+	for (auto &file : bind_data.files) {
+		files->push(file);
+	}
+
+	for (auto &folders : bind_data.pst_folders) {
+		folder_ids.emplace(queue<node_id>({folders.begin(), folders.end()}));
+	}
+
+	// This isn't necessary, however it allows all local spoolers to begin
+	// working immediately instead of blocking to hydrate the message IDs list
 	if (mode == PSTReadFunctionMode::Message) {
-		auto bound = this->bind_message_ids();
+		auto bound = 0;
+		while (bound < 1) {
+			bound = this->bind_message_ids();
+			if (bound < 0) break;
+		}
 	}
 }
 
-idx_t PSTReadGlobalTableFunctionState::bind_message_ids() {
-	auto next = take();
+int64_t PSTReadGlobalTableFunctionState::bind_message_ids() {
+	auto sync_message_ids = current_message_ids.unique_synchronize();
+
+	auto next = take_folder();
 	if (!next)
-		return 0;
+		return -1;
 
 	auto &[file, folder_id] = *next;
 
@@ -38,9 +50,7 @@ idx_t PSTReadGlobalTableFunctionState::bind_message_ids() {
 	auto folder = pst.open_folder(folder_id);
 
 	if (folder.get_message_count() < 1)
-		return bind_message_ids();
-
-	auto sync_message_ids = current_message_ids.unique_synchronize();
+		return 0;
 
 	queue<node_id> msgs;
 	idx_t msg_count = 0;
@@ -50,10 +60,20 @@ idx_t PSTReadGlobalTableFunctionState::bind_message_ids() {
 		++msg_count;
 	}
 
+	total_messages = msgs.size();
 	sync_message_ids->emplace(std::move(msgs));
 	current_file.emplace(std::move(file));
 
 	return msg_count;
+}
+
+double PSTReadGlobalTableFunctionState::progress() const {
+	if (total_files < 1) return 100.0;
+
+	double remain = files->size();
+	if (current_file.has_value()) ++remain;
+
+	return (100.0 * (1.0 - (remain/total_files)));
 }
 
 idx_t PSTReadGlobalTableFunctionState::MaxThreads() const {
@@ -77,9 +97,49 @@ idx_t PSTReadGlobalTableFunctionState::MaxThreads() const {
 	return threads;
 }
 
-std::optional<std::pair<OpenFileInfo, vector<node_id>>> PSTReadGlobalTableFunctionState::take_n(idx_t n) {
+std::optional<OpenFileInfo> PSTReadGlobalTableFunctionState::take_file() {
+	auto sync_files = files.unique_synchronize();
+	if (sync_files->empty()) return {};
+
+	auto file = sync_files->front();
+	sync_files->pop();
+	return std::move(file);
+};
+
+std::optional<std::pair<OpenFileInfo, node_id>> PSTReadGlobalTableFunctionState::take_folder() {
+	auto sync_files = files.unique_synchronize();
+
+	if (sync_files->empty() || folder_ids.empty())
+		return {};
+
+	if (folder_ids.front().empty()) {
+		folder_ids.pop();
+		sync_files->pop();
+		return take_folder();
+	}
+
+	auto file = sync_files->front();
+	auto folder_id = folder_ids.front().front();
+	folder_ids.front().pop();
+
+	if (folder_ids.front().empty() || this->mode == PSTReadFunctionMode::Folder) {
+		sync_files->pop();
+		if (!folder_ids.empty())
+			folder_ids.pop();
+	}
+
+	return std::make_pair(std::move(file), std::move(folder_id));
+}
+
+std::optional<std::pair<OpenFileInfo, vector<node_id>>> PSTReadGlobalTableFunctionState::take_messages(idx_t n) {
+	if (!current_message_ids->has_value()) return {};
+
+	while (current_message_ids.value()->size() < 1) {
+		if (bind_message_ids() < 0) break;
+	}
+
 	auto messages = current_message_ids.unique_synchronize();
-	if (!messages)
+	if (!messages || !messages->has_value())
 		return {};
 
 	if (messages->value().empty())
@@ -94,31 +154,6 @@ std::optional<std::pair<OpenFileInfo, vector<node_id>>> PSTReadGlobalTableFuncti
 	}
 
 	return std::make_pair(*current_file, std::move(batch));
-}
-
-std::optional<std::pair<OpenFileInfo, node_id>> PSTReadGlobalTableFunctionState::take() {
-	auto sync_files = files.unique_synchronize();
-
-	if (sync_files->empty() || folder_ids.empty())
-		return {};
-
-	if (folder_ids.front().empty()) {
-		folder_ids.pop();
-		sync_files->pop();
-		return take();
-	}
-
-	auto file = sync_files->front();
-	auto folder_id = folder_ids.front().front();
-	folder_ids.front().pop();
-
-	if (folder_ids.front().empty() || mode == PSTReadFunctionMode::Folder) {
-		sync_files->pop();
-		if (!folder_ids.empty())
-			folder_ids.pop();
-	}
-
-	return std::make_pair(std::move(file), std::move(folder_id));
 }
 
 // PSTIteratorLocalTableFunctionState
@@ -174,7 +209,7 @@ bool PSTConcreteIteratorState<it, t>::bind_next() {
 	if (!finished())
 		return false;
 
-	std::optional<std::pair<OpenFileInfo, node_id>> next = global_state.take();
+	std::optional<std::pair<OpenFileInfo, node_id>> next = global_state.take_folder();
 
 	if (!next)
 		return false;
@@ -196,10 +231,6 @@ const std::optional<class pst> &PSTIteratorLocalTableFunctionState::current_pst(
 
 const OpenFileInfo &PSTIteratorLocalTableFunctionState::current_file() {
 	return file;
-}
-
-const LogicalType &PSTIteratorLocalTableFunctionState::output_schema() {
-	return global_state.output_schema;
 }
 
 template <typename it, typename t>
@@ -250,16 +281,13 @@ void PSTConcreteIteratorState<pst::message_iterator, message>::bind_iter() {
 // PSTIteratorLocalTableFunctionState (vector of messages)
 template <>
 void PSTConcreteIteratorState<vector<node_id>::iterator, message>::bind_iter() {
-	current = batch->begin();
-	end = batch->end();
+	current = message_batch->begin();
+	end = message_batch->end();
 }
 
 template <>
 bool PSTConcreteIteratorState<vector<node_id>::iterator, message>::bind_next() {
-	if (!finished())
-		return false;
-
-	auto next = global_state.take_n(DEFAULT_STANDARD_VECTOR_SIZE);
+	auto next = global_state.take_messages(DEFAULT_STANDARD_VECTOR_SIZE);
 
 	if (!next)
 		return false;
@@ -267,7 +295,7 @@ bool PSTConcreteIteratorState<vector<node_id>::iterator, message>::bind_next() {
 	auto &[next_file, next_batch] = *next;
 
 	file = std::move(next_file);
-	batch.emplace(std::move(next_batch));
+	message_batch.emplace(std::move(next_batch));
 	pst.emplace(pstsdk::pst(utils::to_wstring(file.path)));
 
 	bind_iter();
