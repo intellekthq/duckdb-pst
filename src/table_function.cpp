@@ -1,5 +1,6 @@
 #include "table_function.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/vector_size.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "function_state.hpp"
 #include "duckdb/common/file_system.hpp"
@@ -82,24 +83,26 @@ unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, Table
 unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, TableFunctionInitInput &input,
                                                      GlobalTableFunctionState *global) {
 	auto &global_state = global->Cast<PSTReadGlobalTableFunctionState>();
-	auto next = global_state.take();
-
-	if (!next)
-		return nullptr;
-
-	auto &[file, folder_id] = *next;
 
 	unique_ptr<PSTIteratorLocalTableFunctionState> local_state;
-	switch (global_state.mode) {
-	case PSTReadFunctionMode::Folder:
+
+	if (global_state.mode == PSTReadFunctionMode::Folder) {
+		auto next = global_state.take();
+
+		if (!next)
+			return nullptr;
+
+		auto &[file, _folder_id] = *next;
 		local_state = make_uniq<PSTConcreteIteratorState<pst::folder_iterator, folder>>(std::move(file), global_state);
-		break;
-	case PSTReadFunctionMode::Message:
-		local_state = make_uniq<PSTConcreteIteratorState<folder::message_iterator, message>>(
-		    std::move(file), std::optional(folder_id), global_state);
-		break;
-	default:
-		break;
+	} else if (global_state.mode == PSTReadFunctionMode::Message) {
+		auto next = global_state.take_n(DEFAULT_STANDARD_VECTOR_SIZE);
+
+		if (!next)
+			return nullptr;
+
+		auto &[file, batch] = *next;
+		local_state = make_uniq<PSTConcreteIteratorState<vector<node_id>::iterator, message>>(
+		    std::move(file), std::move(batch), global_state);
 	}
 
 	return std::move(local_state);
@@ -145,7 +148,7 @@ unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const Function
 		}
 	}
 
-	auto stats = make_uniq<NodeStatistics>(estimated_cardinality);
+	auto stats = make_uniq<NodeStatistics>(estimated_cardinality * 100);
 	return std::move(stats);
 }
 
