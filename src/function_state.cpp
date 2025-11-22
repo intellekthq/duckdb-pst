@@ -1,74 +1,170 @@
 #include "function_state.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/open_file_info.hpp"
+#include "duckdb/common/vector_size.hpp"
 #include "pst_schema.hpp"
+#include "pstsdk/pst/folder.h"
 #include "pstsdk/pst/message.h"
-#include "pstsdk/util/util.h"
+#include "pstsdk/util/primitives.h"
 #include "table_function.hpp"
 #include "utils.hpp"
+#include <optional>
+#include <utility>
 
 namespace intellekt::duckpst {
 using namespace duckdb;
 using namespace pstsdk;
 
 // PSTReadGlobalTableFunctionState
-PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(queue<OpenFileInfo> &&files,
-                                                                 const PSTReadFunctionMode mode,
-                                                                 const LogicalType &output_schema)
-    : files(boost::synchronized_value<queue<OpenFileInfo>>(files)), mode(mode), output_schema(output_schema) {
+PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(PSTReadTableFunctionData &bind_data)
+    : mode(bind_data.mode), total_files(bind_data.files.size()) {
+	for (auto &file : bind_data.files) {
+		files->push(file);
+	}
+
+	for (auto &folders : bind_data.pst_folders) {
+		folder_ids.emplace(queue<node_id>({folders.begin(), folders.end()}));
+	}
+
+	// This isn't necessary, however it allows all local spoolers to begin
+	// working immediately instead of blocking to hydrate the message IDs list
+	if (mode == PSTReadFunctionMode::Message) {
+		auto bound = 0;
+		while (bound < 1) {
+			bound = this->bind_message_ids();
+			if (bound < 0) break;
+		}
+	}
+}
+
+int64_t PSTReadGlobalTableFunctionState::bind_message_ids() {
+	auto sync_message_ids = current_message_ids.unique_synchronize();
+
+	auto next = take_folder();
+	if (!next)
+		return -1;
+
+	auto &[file, folder_id] = *next;
+
+	auto pst = pstsdk::pst(utils::to_wstring(file.path));
+	auto folder = pst.open_folder(folder_id);
+
+	if (folder.get_message_count() < 1)
+		return 0;
+
+	queue<node_id> msgs;
+	idx_t msg_count = 0;
+
+	for (auto it = folder.message_begin(); it != folder.message_end(); ++it) {
+		msgs.emplace(it->get_id());
+		++msg_count;
+	}
+
+	total_messages = msgs.size();
+	sync_message_ids->emplace(std::move(msgs));
+	current_file.emplace(std::move(file));
+
+	return msg_count;
+}
+
+double PSTReadGlobalTableFunctionState::progress() const {
+	if (total_files < 1) return 100.0;
+
+	double remain = files->size();
+	if (current_file.has_value()) ++remain;
+
+	return (100.0 * (1.0 - (remain/total_files)));
 }
 
 idx_t PSTReadGlobalTableFunctionState::MaxThreads() const {
-	return files->size();
+	idx_t threads = 0;
+
+	switch (this->mode) {
+	case PSTReadFunctionMode::Folder:
+		threads = this->files->size();
+		break;
+	case PSTReadFunctionMode::Message:
+		if (this->current_message_ids.value().has_value()) {
+			threads = (this->current_message_ids.value()->size() / DEFAULT_STANDARD_VECTOR_SIZE);
+		} else if (!this->folder_ids.empty()) {
+			threads = this->folder_ids.front().size();
+		}
+		break;
+	default:
+		break;
+	}
+
+	return threads;
 }
 
-std::optional<OpenFileInfo> PSTReadGlobalTableFunctionState::take() {
-	auto sync_files = files.synchronize();
-	if (sync_files->empty())
+std::optional<OpenFileInfo> PSTReadGlobalTableFunctionState::take_file() {
+	auto sync_files = files.unique_synchronize();
+	if (sync_files->empty()) return {};
+
+	auto file = sync_files->front();
+	sync_files->pop();
+	return std::move(file);
+};
+
+std::optional<std::pair<OpenFileInfo, node_id>> PSTReadGlobalTableFunctionState::take_folder() {
+	auto sync_files = files.unique_synchronize();
+
+	if (sync_files->empty() || folder_ids.empty())
 		return {};
 
-	auto front = sync_files->front();
+	if (folder_ids.front().empty()) {
+		folder_ids.pop();
+		sync_files->pop();
+		return take_folder();
+	}
 
-	sync_files->pop();
-	return front;
+	auto file = sync_files->front();
+	auto folder_id = folder_ids.front().front();
+	folder_ids.front().pop();
+
+	if (folder_ids.front().empty() || this->mode == PSTReadFunctionMode::Folder) {
+		sync_files->pop();
+		if (!folder_ids.empty())
+			folder_ids.pop();
+	}
+
+	return std::make_pair(std::move(file), std::move(folder_id));
+}
+
+std::optional<std::pair<OpenFileInfo, vector<node_id>>> PSTReadGlobalTableFunctionState::take_messages(idx_t n) {
+	if (!current_message_ids->has_value()) return {};
+
+	while (current_message_ids.value()->size() < 1) {
+		if (bind_message_ids() < 0) break;
+	}
+
+	auto messages = current_message_ids.unique_synchronize();
+	if (!messages || !messages->has_value())
+		return {};
+
+	if (messages->value().empty())
+		return {};
+
+	vector<node_id> batch;
+	for (auto i = 0; i < n; ++i) {
+		if (messages->value().empty())
+			break;
+		batch.push_back(messages->value().front());
+		messages->value().pop();
+	}
+
+	return std::make_pair(*current_file, std::move(batch));
 }
 
 // PSTIteratorLocalTableFunctionState
-PSTIteratorLocalTableFunctionState::PSTIteratorLocalTableFunctionState(OpenFileInfo &&file,
-                                                                       PSTReadGlobalTableFunctionState &global_state)
-    : file(file), global_state(global_state) {
+PSTIteratorLocalTableFunctionState::PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state)
+    : global_state(global_state) {
 }
 
+// PSTConcreteIteratorState
 template <typename it, typename t>
-PSTConcreteIteratorState<it, t>::PSTConcreteIteratorState(OpenFileInfo &&file,
-                                                          PSTReadGlobalTableFunctionState &global_state)
-    : PSTIteratorLocalTableFunctionState(std::move(file), global_state) {
-	pst.emplace(pstsdk::pst(utils::to_wstring(file.path)));
-	bind_iter();
-}
-
-template <typename it, typename t>
-std::optional<t> PSTConcreteIteratorState<it, t>::next() {
-	if (finished() && !bind_next())
-		return {};
-	t x = **current;
-	++(*current);
-	return x;
-}
-
-template <typename it, typename t>
-bool PSTConcreteIteratorState<it, t>::bind_next() {
-	if (!finished())
-		return false;
-	auto next_file = global_state.take();
-	if (!next_file)
-		return false;
-
-	file = std::move(*next_file);
-	pst.emplace(pstsdk::pst(utils::to_wstring(file.path)));
-
-	bind_iter();
-
-	return true;
+PSTConcreteIteratorState<it, t>::PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state)
+    : PSTIteratorLocalTableFunctionState(global_state) {
 }
 
 template <typename it, typename t>
@@ -77,18 +173,83 @@ const bool PSTConcreteIteratorState<it, t>::finished() {
 }
 
 template <typename it, typename t>
-const std::optional<class pst> &PSTConcreteIteratorState<it, t>::current_pst() {
-	return pst;
+std::optional<t> PSTConcreteIteratorState<it, t>::next() {
+	// If the current state is finished, keep going until we can keep binding
+	while (finished() && bind_next()) {
+	}
+
+	// If we can't bind anymore and are finished, we're really finished
+	if (finished())
+		return {};
+
+	t x = current_item();
+	++(*current);
+	return x;
 }
 
 template <typename it, typename t>
-const OpenFileInfo &PSTConcreteIteratorState<it, t>::current_file() {
+t PSTConcreteIteratorState<it, t>::current_item() {
+	return **current;
+}
+
+template <>
+message PSTConcreteIteratorState<vector<node_id>::iterator, message>::current_item() {
+	auto msg_id = **current;
+	return current_pst()->open_message(msg_id);
+}
+
+template <>
+folder PSTConcreteIteratorState<vector<node_id>::iterator, folder>::current_item() {
+	auto msg_id = **current;
+	return current_pst()->open_folder(msg_id);
+}
+
+template <typename it, typename t>
+bool PSTConcreteIteratorState<it, t>::bind_next() {
+	if (!finished())
+		return false;
+
+	std::optional<std::pair<OpenFileInfo, node_id>> next = global_state.take_folder();
+
+	if (!next)
+		return false;
+
+	auto &[next_file, next_folder_id] = *next;
+
+	file = std::move(next_file);
+	folder_id = next_folder_id;
+	pst.emplace(pstsdk::pst(utils::to_wstring(file.path)));
+
+	bind_iter();
+
+	return true;
+}
+
+const std::optional<class pst> &PSTIteratorLocalTableFunctionState::current_pst() {
+	return pst;
+}
+
+const OpenFileInfo &PSTIteratorLocalTableFunctionState::current_file() {
 	return file;
 }
 
 template <typename it, typename t>
-const LogicalType &PSTConcreteIteratorState<it, t>::output_schema() {
-	return global_state.output_schema;
+idx_t PSTConcreteIteratorState<it, t>::emit_rows(DataChunk &output) {
+	idx_t rows = 0;
+
+	for (idx_t i = 0; i < STANDARD_VECTOR_SIZE; ++i) {
+		auto item = next();
+
+		if (!item) {
+			break;
+		}
+
+		schema::into_row<t>(*this, output, *item, i);
+
+		++rows;
+	}
+
+	return rows;
 }
 
 // PSTIteratorLocalTableFunctionState (NDB Folders)
@@ -98,29 +259,16 @@ void PSTConcreteIteratorState<pst::folder_iterator, folder>::bind_iter() {
 	end = pst->folder_end();
 }
 
+// PSTIteratorLocalTableFunctionState (table row)
 template <>
-idx_t PSTConcreteIteratorState<pst::folder_iterator, folder>::emit_rows(DataChunk &output) {
-	idx_t rows = 0;
-
-	for (idx_t i = 0; i < STANDARD_VECTOR_SIZE; ++i) {
-		auto folder = next();
-		if (!folder) {
-			break;
-		}
-
-		output.SetValue(0, i, Value(current_file().path));
-		output.SetValue(1, i, Value(utils::to_utf8(current_pst()->get_name())));
-		output.SetValue(2, i, Value::UINTEGER(folder->get_property_bag().get_node().get_parent_id()));
-		output.SetValue(3, i, Value::UINTEGER(folder->get_id()));
-		output.SetValue(4, i, Value(utils::to_utf8(folder->get_name())));
-		output.SetValue(5, i, Value::UINTEGER(folder->get_subfolder_count()));
-		output.SetValue(6, i, Value::BIGINT(folder->get_message_count()));
-		output.SetValue(7, i, Value::BIGINT(folder->get_unread_message_count()));
-
-		++rows;
+void PSTConcreteIteratorState<folder::message_iterator, message>::bind_iter() {
+	if (!folder_id) {
+		throw InvalidInputException("PSTConcreteIteratorState for subfolder is missing its folder_id");
 	}
 
-	return rows;
+	auto folder = pst->open_folder(*folder_id);
+	current = folder.message_begin();
+	end = folder.message_end();
 }
 
 // PSTIteratorLocalTableFunctionState (NDB Messages)
@@ -130,153 +278,33 @@ void PSTConcreteIteratorState<pst::message_iterator, message>::bind_iter() {
 	end = pst->message_end();
 }
 
+// PSTIteratorLocalTableFunctionState (vector of messages)
 template <>
-idx_t PSTConcreteIteratorState<pst::message_iterator, message>::emit_rows(DataChunk &output) {
-	idx_t rows = 0;
+void PSTConcreteIteratorState<vector<node_id>::iterator, message>::bind_iter() {
+	current = message_batch->begin();
+	end = message_batch->end();
+}
 
-	for (idx_t i = 0; i < STANDARD_VECTOR_SIZE; ++i) {
-		auto msg = next();
-		if (!msg) {
-			break;
-		}
+template <>
+bool PSTConcreteIteratorState<vector<node_id>::iterator, message>::bind_next() {
+	auto next = global_state.take_messages(DEFAULT_STANDARD_VECTOR_SIZE);
 
-		auto &prop_bag = msg->get_property_bag();
+	if (!next)
+		return false;
 
-		output.SetValue(0, i, Value(current_file().path));
-		output.SetValue(1, i, Value(utils::to_utf8(current_pst()->get_name())));
-		output.SetValue(2, i, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
-		output.SetValue(3, i, Value::UINTEGER(msg->get_id()));
+	auto &[next_file, next_batch] = *next;
 
-		// Subject
-		output.SetValue(4, i, Value(utils::read_prop_utf8(prop_bag, 0x37)));
+	file = std::move(next_file);
+	message_batch.emplace(std::move(next_batch));
+	pst.emplace(pstsdk::pst(utils::to_wstring(file.path)));
 
-		// PidTagSenderName
-		if (prop_bag.prop_exists(0x0C1A)) {
-			output.SetValue(5, i, Value(utils::read_prop_utf8(prop_bag, 0x0C1A)));
-		} else {
-			output.SetValue(5, i, Value(nullptr));
-		}
+	bind_iter();
 
-		// PidTagSenderAddress
-		if (prop_bag.prop_exists(0x0C1F)) {
-			output.SetValue(6, i, Value(utils::read_prop_utf8(prop_bag, 0x0C1F)));
-		} else {
-			output.SetValue(6, i, Value(nullptr));
-		}
-
-		// PidTagMessageDeliveryTime
-		if (prop_bag.prop_exists(0x0E06)) {
-			auto filetime = prop_bag.read_prop<ulonglong>(0x0E06);
-			time_t unixtime = filetime_to_time_t(filetime);
-			output.SetValue(7, i, Value::TIMESTAMP(timestamp_sec_t(unixtime)));
-		} else {
-			output.SetValue(7, i, Value(nullptr));
-		}
-
-		// PidTagMessageClass
-		if (prop_bag.prop_exists(0x001A)) {
-			output.SetValue(8, i, Value(utils::read_prop_utf8(prop_bag, 0x001A)));
-		} else {
-			output.SetValue(8, i, Value(nullptr));
-		}
-
-		// PidTagImportance (defaults to 'normal')
-		if (prop_bag.prop_exists(0x0017)) {
-			uint32_t importance = prop_bag.read_prop<uint32_t>(0x0017);
-			output.SetValue(9, i, Value::ENUM(importance, schema::IMPORTANCE_ENUM));
-		} else {
-			output.SetValue(9, i, Value(nullptr));
-		}
-
-		// PidTagSensitivity (defaults to 'none')
-		if (prop_bag.prop_exists(0x0036)) {
-			uint32_t sensitivity = prop_bag.read_prop<uint32_t>(0x0036);
-			output.SetValue(10, i, Value::ENUM(sensitivity, schema::SENSITIVITY_ENUM));
-		} else {
-			output.SetValue(10, i, Value(nullptr));
-		}
-
-		// PidTagMessageFlags (bitmask)
-		if (prop_bag.prop_exists(0x0E07)) {
-			output.SetValue(11, i, Value::UINTEGER(prop_bag.read_prop<uint32_t>(0x0E07)));
-		} else {
-			output.SetValue(11, i, Value(nullptr));
-		}
-
-		output.SetValue(12, i, Value::UINTEGER(msg->size()));
-
-		size_t attachment_count = msg->get_attachment_count();
-		output.SetValue(13, i, Value::BOOLEAN(attachment_count > 0));
-		output.SetValue(14, i, Value::UINTEGER(attachment_count));
-
-		// Re-encode plaintext as UTF-8
-		try {
-			std::wstring body = msg->get_body();
-			output.SetValue(15, i, Value(utils::to_utf8(body)));
-		} catch (...) {
-			output.SetValue(15, i, Value(nullptr));
-		}
-
-		// Re-encode HTML body as UTF-8
-		try {
-			std::wstring html_body = msg->get_html_body();
-			output.SetValue(16, i, Value(utils::to_utf8(html_body)));
-		} catch (...) {
-			output.SetValue(16, i, Value(nullptr));
-		}
-
-		// PidTagInternetMessageId
-		if (prop_bag.prop_exists(0x1035)) {
-			output.SetValue(17, i, Value(utils::read_prop_utf8(prop_bag, 0x1035)));
-		} else {
-			output.SetValue(17, i, Value(nullptr));
-		}
-
-		// PidTagConversationTopic
-		if (prop_bag.prop_exists(0x0070)) {
-			output.SetValue(18, i, Value(utils::read_prop_utf8(prop_bag, 0x0070)));
-		} else {
-			output.SetValue(18, i, Value(nullptr));
-		}
-
-        // Recipients
-        vector<Value> recipients;
-        for (auto it = msg->recipient_begin(); it != msg->recipient_end(); ++it) {
-            auto recipient = *it;
-            child_list_t<Value> recipient_struct;
-            vector<Value> values;
-
-            Value account_name;
-            if (recipient.has_account_name()) {
-                account_name = Value(utils::to_utf8(recipient.get_account_name()));
-            } else {
-                account_name = Value(nullptr);
-            }
-
-            Value email_address;
-            if (recipient.has_email_address()) {
-                email_address = Value(utils::to_utf8(recipient.get_email_address()));
-            } else {
-                email_address = Value(nullptr);
-            }
-
-            values.emplace_back(Value(utils::to_utf8(recipient.get_name())));
-            values.emplace_back(account_name);
-            values.emplace_back(email_address);
-            values.emplace_back(Value(utils::to_utf8(recipient.get_address_type())));
-            values.emplace_back(Value::ENUM(recipient.get_type(), schema::RECIPIENT_TYPE_ENUM));
-
-            recipients.emplace_back(Value::STRUCT(schema::RECIPIENT_SCHEMA, values));
-        }
-        output.SetValue(19, i, Value::LIST(recipients));
-		output.SetValue(20, i, Value(nullptr));
-
-		++rows;
-	}
-
-	return rows;
+	return true;
 }
 
 template class PSTConcreteIteratorState<pst::folder_iterator, folder>;
 template class PSTConcreteIteratorState<pst::message_iterator, message>;
+template class PSTConcreteIteratorState<folder::message_iterator, message>;
+template class PSTConcreteIteratorState<vector<node_id>::iterator, message>;
 } // namespace intellekt::duckpst

@@ -1,4 +1,7 @@
+#pragma once
+
 #include "duckdb.hpp"
+#include "duckdb/common/open_file_info.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "table_function.hpp"
 
@@ -9,54 +12,83 @@ namespace intellekt::duckpst {
 using namespace duckdb;
 using namespace pstsdk;
 
-// The global state for any PST read is a queue of files
+// The global state for a PST read is initialized from a list of globbed files, which is
+// turned into a mutex'd queue, exposing iteration via:
+//
+// - take_file()     -> a PST at a time
+// - take_folder()  -> a directory at a time within a PST
+// - take_message() -> a message at a time within a PST folder
+//
+// Folders for each PST are eagerly enumerated during init of bind_data to be available
+// for cardinality estimates.
+//
+// Messages are lazily enumerated on demand while spooling via take*.
+//
 class PSTReadGlobalTableFunctionState : public GlobalTableFunctionState {
+	// take_file
 	boost::synchronized_value<queue<OpenFileInfo>> files;
 
+	// take_folder
+	queue<queue<node_id>> folder_ids;
+
+	// take_messages
+	std::optional<OpenFileInfo> current_file;
+	boost::synchronized_value<std::optional<queue<node_id>>> current_message_ids;
+
+	// progress
+	idx_t total_files;
+	idx_t total_messages;
+
+	int64_t bind_message_ids();
 public:
-	const LogicalType &output_schema;
-	const PSTReadFunctionMode mode;
+	PSTReadGlobalTableFunctionState(PSTReadTableFunctionData &bind_data);
+	PSTReadFunctionMode mode;
 
-	PSTReadGlobalTableFunctionState(queue<OpenFileInfo> &&files, const PSTReadFunctionMode mode,
-	                                const LogicalType &output_schema);
-
-	// This is an upper limit, where we are saying we're happy with one
-	// thread per file. The optimizer uses this and the cardinality estimate
-	// to determine how many threads to spawn.
-
-	// NOTE: One thread per file is not guaranteed!
 	idx_t MaxThreads() const override;
-	std::optional<OpenFileInfo> take();
+	double progress() const;
+
+	std::optional<OpenFileInfo> take_file();
+	std::optional<std::pair<OpenFileInfo, node_id>> take_folder();
+	std::optional<std::pair<OpenFileInfo, vector<node_id>>> take_messages(idx_t n);
 };
 
-// The local state has a PST with a reference to the global state. In the case
-// that there are more files than threads (small reads), the local state can
-// dequeue another file for processing.
+// PSTIteratorLocalTableFunctionState is a generic data bag that holds a PST instance,
+// folder ID, or list of message IDs depending on the scan being executed. Reads are
+// parallelized: several threads can process parts of a single large file, or different
+// files altogether.
 
 // The local state is responsible for spooling rows into a DataChunk ref. Concrete
 // impls of the iterator state override for their own emit_rows behavior. The output schema
-// is resolved via the global state ref, and bound by the `PSTReadTableFunctionData` constructor.
+// can be confirmed in the global state, but is 1:1 with the item type.
 
-// Concrete impls must be provided for each iterator type we wish to emit. Currently
-// this is just folders (pst::folder_iterator, pstsdk::folder)
-// and messages (pst::message_iterator, pstsdk::message). In pstsdk, the iterators for
-// ndb backed iterators and table backed iterators have different types (so e.g. subfolders need
-// their own concrete implementations).
+// Concrete impls must be provided for each iterator type we wish to spool. In pstsdk,
+// the iterators for ndb backed iterators and table backed iterators have different types
+// (so e.g. subfolders need their own concrete implementations).
+//
 class PSTIteratorLocalTableFunctionState : public LocalTableFunctionState {
 protected:
 	std::optional<pst> pst;
+	std::optional<node_id> folder_id;
+	std::optional<vector<node_id>> message_batch;
+
 	OpenFileInfo file;
 	PSTReadGlobalTableFunctionState &global_state;
-	PSTIteratorLocalTableFunctionState(OpenFileInfo &&file, PSTReadGlobalTableFunctionState &global_state);
+	PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state);
 
 public:
 	virtual idx_t emit_rows(DataChunk &output) {
 		return 0;
 	}
+
+	const OpenFileInfo &current_file();
+	const std::optional<class pst> &current_pst();
 };
 
 template <typename it, typename t>
 class PSTConcreteIteratorState : public PSTIteratorLocalTableFunctionState {
+	t current_item();
+
+protected:
 	std::optional<it> current;
 	std::optional<it> end;
 
@@ -64,14 +96,12 @@ class PSTConcreteIteratorState : public PSTIteratorLocalTableFunctionState {
 	void bind_iter();
 
 public:
-	PSTConcreteIteratorState(OpenFileInfo &&file, PSTReadGlobalTableFunctionState &global_state);
+	PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state);
 
-	const LogicalType &output_schema();
-	const OpenFileInfo &current_file();
-	const std::optional<class pst> &current_pst();
 	const bool finished();
 
 	std::optional<t> next();
 	idx_t emit_rows(DataChunk &output) override;
 };
+
 } // namespace intellekt::duckpst

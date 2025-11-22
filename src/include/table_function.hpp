@@ -9,6 +9,8 @@
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/storage/statistics/node_statistics.hpp"
 #include <pstsdk/pst.h>
+#include <boost/iterator/zip_iterator.hpp>
+#include <boost/range/combine.hpp>
 #include <boost/thread/synchronized_value.hpp>
 
 namespace intellekt::duckpst {
@@ -24,6 +26,7 @@ static const map<string, PSTReadFunctionMode> FNAME_TO_ENUM = {
 
 struct PSTReadTableFunctionData : public TableFunctionData {
 	vector<OpenFileInfo> files;
+	vector<vector<pstsdk::node_id>> pst_folders;
 
 public:
 	const PSTReadFunctionMode mode;
@@ -45,6 +48,9 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
                                                      GlobalTableFunctionState *global);
 
 unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const FunctionData *data);
+
+double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
+                                               const GlobalTableFunctionState *global_state);
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output);
 } // namespace intellekt::duckpst

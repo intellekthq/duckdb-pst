@@ -1,6 +1,8 @@
 #pragma once
 
+#include "function_state.hpp"
 #include "duckdb/common/types.hpp"
+#include "duckdb/common/types/data_chunk.hpp"
 #include "duckdb/common/types/vector.hpp"
 
 // Everything that we want to emit as a row or column
@@ -60,13 +62,9 @@ static const auto RECIPIENT_SCHEMA = LogicalType::STRUCT({{"name", LogicalType::
                                                           {"recipient_type", RECIPIENT_TYPE_ENUM}});
 
 static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({{"filename", LogicalType::VARCHAR},
-                                                           {"long_filename", LogicalType::VARCHAR},
-                                                           {"extension", LogicalType::VARCHAR},
-                                                           {"mime_type", LogicalType::VARCHAR},
                                                            {"size", LogicalType::UBIGINT},
                                                            {"is_message", LogicalType::BOOLEAN},
-                                                           {"content_id", LogicalType::VARCHAR},
-                                                           {"attach_method", ATTACH_METHOD_ENUM}});
+                                                           {"bytes", LogicalType::BLOB}});
 
 static const auto MESSAGE_SCHEMA = LogicalType::STRUCT({{"pst_path", LogicalType::VARCHAR},
                                                         {"pst_name", LogicalType::VARCHAR},
@@ -100,4 +98,8 @@ static const auto FOLDER_SCHEMA = LogicalType::STRUCT({
     {"message_count", LogicalType::BIGINT},
     {"unread_message_count", LogicalType::BIGINT},
 });
+
+template <typename Item>
+void into_row(PSTIteratorLocalTableFunctionState &local_state, DataChunk &output, Item &item, idx_t row_number);
+
 } // namespace intellekt::duckpst::schema

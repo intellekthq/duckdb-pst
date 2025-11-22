@@ -14,13 +14,14 @@ include_directories(src/include)
 include_directories(microsoft-pst-sdk)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "-Wno-error=incompatible-ms-struct")
+set(CMAKE_CXX_FLAGS "-Wno-error=incompatible-ms-struct -Wno-incompatible-ms-struct -Wno-deprecated-declarations")
 
 set(
   EXTENSION_SOURCES
   src/function_state.cpp
   src/table_function.cpp
   src/pst_extension.cpp
+  src/pst_schema.cpp
 )
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
