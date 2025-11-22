@@ -57,21 +57,24 @@ idx_t PSTReadGlobalTableFunctionState::bind_message_ids() {
 }
 
 idx_t PSTReadGlobalTableFunctionState::MaxThreads() const {
+	idx_t threads = 0;
+
 	switch (this->mode) {
 	case PSTReadFunctionMode::Folder:
-		return this->files->size();
+		threads = this->files->size();
+		break;
 	case PSTReadFunctionMode::Message:
 		if (this->current_message_ids.value().has_value()) {
-			return this->current_message_ids.value()->size() / DEFAULT_STANDARD_VECTOR_SIZE;
+			threads = (this->current_message_ids.value()->size() / DEFAULT_STANDARD_VECTOR_SIZE);
 		} else if (!this->folder_ids.empty()) {
-			return this->folder_ids.front().size();
+			threads = this->folder_ids.front().size();
 		}
 		break;
 	default:
 		break;
 	}
 
-	return 0;
+	return threads;
 }
 
 std::optional<std::pair<OpenFileInfo, vector<node_id>>> PSTReadGlobalTableFunctionState::take_n(idx_t n) {
@@ -119,36 +122,14 @@ std::optional<std::pair<OpenFileInfo, node_id>> PSTReadGlobalTableFunctionState:
 }
 
 // PSTIteratorLocalTableFunctionState
-PSTIteratorLocalTableFunctionState::PSTIteratorLocalTableFunctionState(OpenFileInfo &&file,
-                                                                       std::optional<node_id> &&maybe_folder_id,
-                                                                       PSTReadGlobalTableFunctionState &global_state)
-    : file(file), folder_id(maybe_folder_id), global_state(global_state) {
+PSTIteratorLocalTableFunctionState::PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state)
+    : global_state(global_state) {
 }
 
-// Per folder iterator
+// PSTConcreteIteratorState
 template <typename it, typename t>
-PSTConcreteIteratorState<it, t>::PSTConcreteIteratorState(OpenFileInfo &&file, std::optional<node_id> &&maybe_folder_id,
-                                                          PSTReadGlobalTableFunctionState &global_state)
-    : PSTIteratorLocalTableFunctionState(std::move(file), std::move(maybe_folder_id), global_state) {
-	pst.emplace(pstsdk::pst(utils::to_wstring(this->file.path)));
-	bind_iter();
-}
-
-// Per file iterator
-template <typename it, typename t>
-PSTConcreteIteratorState<it, t>::PSTConcreteIteratorState(OpenFileInfo &&file,
-                                                          PSTReadGlobalTableFunctionState &global_state)
-    : PSTConcreteIteratorState(std::move(file), (std::optional<node_id>)std::nullopt, global_state) {
-}
-
-// Per message iterator
-template <typename it, typename t>
-PSTConcreteIteratorState<it, t>::PSTConcreteIteratorState(OpenFileInfo &&file, std::optional<vector<node_id>> &&batch,
-                                                          PSTReadGlobalTableFunctionState &global_state)
-    : PSTIteratorLocalTableFunctionState(std::move(file), (std::optional<node_id>)std::nullopt, global_state),
-      batch(std::move(batch)) {
-	pst.emplace(pstsdk::pst(utils::to_wstring(this->file.path)));
-	bind_iter();
+PSTConcreteIteratorState<it, t>::PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state)
+    : PSTIteratorLocalTableFunctionState(global_state) {
 }
 
 template <typename it, typename t>

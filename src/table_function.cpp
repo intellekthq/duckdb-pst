@@ -84,27 +84,21 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
                                                      GlobalTableFunctionState *global) {
 	auto &global_state = global->Cast<PSTReadGlobalTableFunctionState>();
 
-	unique_ptr<PSTIteratorLocalTableFunctionState> local_state;
+	unique_ptr<PSTIteratorLocalTableFunctionState> local_state = nullptr;
 
-	if (global_state.mode == PSTReadFunctionMode::Folder) {
-		auto next = global_state.take();
-
-		if (!next)
-			return nullptr;
-
-		auto &[file, _folder_id] = *next;
-		local_state = make_uniq<PSTConcreteIteratorState<pst::folder_iterator, folder>>(std::move(file), global_state);
-	} else if (global_state.mode == PSTReadFunctionMode::Message) {
-		auto next = global_state.take_n(DEFAULT_STANDARD_VECTOR_SIZE);
-
-		if (!next)
-			return nullptr;
-
-		auto &[file, batch] = *next;
-		local_state = make_uniq<PSTConcreteIteratorState<vector<node_id>::iterator, message>>(
-		    std::move(file), std::move(batch), global_state);
+	switch (global_state.mode) {
+	case PSTReadFunctionMode::Folder:
+		local_state = make_uniq<PSTConcreteIteratorState<pst::folder_iterator, folder>>(global_state);
+		break;
+	case PSTReadFunctionMode::Message:
+		local_state = make_uniq<PSTConcreteIteratorState<vector<node_id>::iterator, message>>(global_state);
+		break;
+	default:
+		break;
 	}
 
+	if (!local_state)
+		return nullptr;
 	return std::move(local_state);
 }
 

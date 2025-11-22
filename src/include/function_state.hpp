@@ -30,11 +30,6 @@ public:
 	PSTReadGlobalTableFunctionState(queue<OpenFileInfo> &&files, queue<queue<node_id>> &&folder_queue,
 	                                const PSTReadFunctionMode mode, const LogicalType &output_schema);
 
-	// This is an upper limit, where we are saying we're happy with one
-	// thread per file. The optimizer uses this and the cardinality estimate
-	// to determine how many threads to spawn.
-
-	// NOTE: One thread per file is not guaranteed!
 	idx_t MaxThreads() const override;
 	std::optional<std::pair<OpenFileInfo, node_id>> take();
 	std::optional<std::pair<OpenFileInfo, vector<node_id>>> take_n(idx_t n);
@@ -60,9 +55,7 @@ protected:
 
 	OpenFileInfo file;
 	PSTReadGlobalTableFunctionState &global_state;
-	PSTIteratorLocalTableFunctionState(OpenFileInfo &&file, PSTReadGlobalTableFunctionState &global_state);
-	PSTIteratorLocalTableFunctionState(OpenFileInfo &&file, std::optional<node_id> &&maybe_folder_id,
-	                                   PSTReadGlobalTableFunctionState &global_state);
+	PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state);
 
 public:
 	virtual idx_t emit_rows(DataChunk &output) {
@@ -87,11 +80,7 @@ protected:
 	void bind_iter();
 
 public:
-	PSTConcreteIteratorState(OpenFileInfo &&file, PSTReadGlobalTableFunctionState &global_state);
-	PSTConcreteIteratorState(OpenFileInfo &&file, std::optional<vector<node_id>> &&batch,
-	                         PSTReadGlobalTableFunctionState &global_state);
-	PSTConcreteIteratorState(OpenFileInfo &&file, std::optional<node_id> &&maybe_folder_id,
-	                         PSTReadGlobalTableFunctionState &global_state);
+	PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state);
 
 	const bool finished();
 
