@@ -21,7 +21,7 @@ set(
   src/function_state.cpp
   src/table_function.cpp
   src/pst_extension.cpp
-  src/pst_schema.cpp
+  src/row_serializer.cpp
 )
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})

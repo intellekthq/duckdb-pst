@@ -1,4 +1,5 @@
-#include "pst_schema.hpp"
+#include "row_serializer.hpp"
+#include "schema.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/logging/logger.hpp"
@@ -7,10 +8,9 @@
 #include "pstsdk/mapitags.h"
 #include "pstsdk/pst/folder.h"
 #include "pstsdk/util/primitives.h"
-#include "utils.hpp"
 #include <cstdint>
 
-namespace intellekt::duckpst::schema {
+namespace intellekt::duckpst::row_serializer {
 
 template <typename T>
 duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag, pstsdk::prop_id prop) {
@@ -51,71 +51,71 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.global_state.output_schema, schema_col);
 	switch (schema_col) {
-	case static_cast<int>(MessageProjection::pst_path):
+	case static_cast<int>(schema::MessageProjection::pst_path):
 		output.SetValue(column_index, row_number, Value(local_state.current_file().path));
 		break;
-	case static_cast<int>(MessageProjection::pst_name):
+	case static_cast<int>(schema::MessageProjection::pst_name):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, pst_prop_bag, PR_DISPLAY_NAME_A));
 		break;
-	case static_cast<int>(MessageProjection::folder_id):
+	case static_cast<int>(schema::MessageProjection::folder_id):
 		output.SetValue(column_index, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
 		break;
-	case static_cast<int>(MessageProjection::message_id):
+	case static_cast<int>(schema::MessageProjection::message_id):
 		output.SetValue(column_index, row_number, Value::UINTEGER(msg.get_id()));
 		break;
-	case static_cast<int>(MessageProjection::subject):
+	case static_cast<int>(schema::MessageProjection::subject):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_SUBJECT_A));
 		break;
-	case static_cast<int>(MessageProjection::sender_name):
+	case static_cast<int>(schema::MessageProjection::sender_name):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_SENDER_NAME_A));
 		break;
-	case static_cast<int>(MessageProjection::sender_email_address):
+	case static_cast<int>(schema::MessageProjection::sender_email_address):
 		output.SetValue(column_index, row_number,
 		                from_prop<std::string>(col_type, prop_bag, PR_SENDER_EMAIL_ADDRESS_A));
 		break;
-	case static_cast<int>(MessageProjection::message_delivery_time):
+	case static_cast<int>(schema::MessageProjection::message_delivery_time):
 		output.SetValue(column_index, row_number,
 		                from_prop<pstsdk::ulonglong>(col_type, prop_bag, PR_MESSAGE_DELIVERY_TIME));
 		break;
-	case static_cast<int>(MessageProjection::message_class):
+	case static_cast<int>(schema::MessageProjection::message_class):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_MESSAGE_CLASS_A));
 		break;
-	case static_cast<int>(MessageProjection::importance):
+	case static_cast<int>(schema::MessageProjection::importance):
 		output.SetValue(column_index, row_number, from_prop<uint32_t>(col_type, prop_bag, PR_IMPORTANCE));
 		break;
-	case static_cast<int>(MessageProjection::sensitivity):
+	case static_cast<int>(schema::MessageProjection::sensitivity):
 		output.SetValue(column_index, row_number, from_prop<uint32_t>(col_type, prop_bag, PR_SENSITIVITY));
 		break;
-	case static_cast<int>(MessageProjection::message_flags):
+	case static_cast<int>(schema::MessageProjection::message_flags):
 		output.SetValue(column_index, row_number, from_prop<uint32_t>(col_type, prop_bag, PR_MESSAGE_FLAGS));
 		break;
-	case static_cast<int>(MessageProjection::message_size):
+	case static_cast<int>(schema::MessageProjection::message_size):
 		output.SetValue(column_index, row_number, Value::BIGINT(msg.size()));
 		break;
-	case static_cast<int>(MessageProjection::has_attachments): {
+	case static_cast<int>(schema::MessageProjection::has_attachments): {
 		size_t attachment_count = msg.get_attachment_count();
 		output.SetValue(column_index, row_number, Value::BOOLEAN(attachment_count > 0));
 		break;
 	}
-	case static_cast<int>(MessageProjection::attachment_count): {
+	case static_cast<int>(schema::MessageProjection::attachment_count): {
 		size_t attachment_count = msg.get_attachment_count();
 		output.SetValue(column_index, row_number, Value::UINTEGER(attachment_count));
 		break;
 	}
-	case static_cast<int>(MessageProjection::body):
+	case static_cast<int>(schema::MessageProjection::body):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_BODY_A));
 		break;
-	case static_cast<int>(MessageProjection::body_html):
+	case static_cast<int>(schema::MessageProjection::body_html):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_HTML));
 		break;
-	case static_cast<int>(MessageProjection::internet_message_id):
+	case static_cast<int>(schema::MessageProjection::internet_message_id):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_INTERNET_MESSAGE_ID));
 		break;
-	case static_cast<int>(MessageProjection::conversation_topic):
+	case static_cast<int>(schema::MessageProjection::conversation_topic):
 		// PidTagConversationTopic
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_CONVERSATION_TOPIC_A));
 		break;
-	case static_cast<int>(MessageProjection::recipients): {
+	case static_cast<int>(schema::MessageProjection::recipients): {
 		vector<Value> recipients;
 		for (auto it = msg.recipient_begin(); it != msg.recipient_end(); ++it) {
 			auto recipient = *it;
@@ -139,7 +139,7 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 		output.SetValue(column_index, row_number, Value::LIST(schema::RECIPIENT_SCHEMA, recipients));
 		break;
 	}
-	case static_cast<int>(MessageProjection::attachments): {
+	case static_cast<int>(schema::MessageProjection::attachments): {
 		vector<Value> attachments;
 		// for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
 		//     auto attachment = *it;
@@ -177,28 +177,28 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 	auto &col_type = StructType::GetChildType(local_state.global_state.output_schema, schema_col);
 
 	switch (schema_col) {
-	case static_cast<int>(FolderProjection::pst_path):
+	case static_cast<int>(schema::FolderProjection::pst_path):
 		output.SetValue(schema_col, row_number, Value(local_state.current_file().path));
 		break;
-	case static_cast<int>(FolderProjection::pst_name):
+	case static_cast<int>(schema::FolderProjection::pst_name):
 		output.SetValue(schema_col, row_number, from_prop<std::string>(col_type, pst_prop_bag, PR_DISPLAY_NAME_A));
 		break;
-	case static_cast<int>(FolderProjection::parent_folder_id):
+	case static_cast<int>(schema::FolderProjection::parent_folder_id):
 		output.SetValue(schema_col, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
 		break;
-	case static_cast<int>(FolderProjection::folder_id):
+	case static_cast<int>(schema::FolderProjection::folder_id):
 		output.SetValue(schema_col, row_number, Value::UINTEGER(folder.get_id()));
 		break;
-	case static_cast<int>(FolderProjection::folder_name):
+	case static_cast<int>(schema::FolderProjection::folder_name):
 		output.SetValue(schema_col, row_number, from_prop<std::string>(col_type, prop_bag, PR_DISPLAY_NAME_A));
 		break;
-	case static_cast<int>(FolderProjection::subfolder_count):
+	case static_cast<int>(schema::FolderProjection::subfolder_count):
 		output.SetValue(schema_col, row_number, Value::UINTEGER(folder.get_subfolder_count()));
 		break;
-	case static_cast<int>(FolderProjection::message_count):
+	case static_cast<int>(schema::FolderProjection::message_count):
 		output.SetValue(schema_col, row_number, Value::BIGINT(folder.get_message_count()));
 		break;
-	case static_cast<int>(FolderProjection::unread_message_count):
+	case static_cast<int>(schema::FolderProjection::unread_message_count):
 		output.SetValue(schema_col, row_number, Value::BIGINT(folder.get_unread_message_count()));
 		break;
 	default:
@@ -225,4 +225,4 @@ void into_row(PSTIteratorLocalTableFunctionState &local_state, DataChunk &output
 template void into_row<pstsdk::folder>(PSTIteratorLocalTableFunctionState &, DataChunk &, pstsdk::folder &, idx_t);
 template void into_row<pstsdk::message>(PSTIteratorLocalTableFunctionState &, DataChunk &, pstsdk::message &, idx_t);
 
-} // namespace intellekt::duckpst::schema
+} // namespace intellekt::duckpst::row_serializer

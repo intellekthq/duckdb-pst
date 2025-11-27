@@ -3,7 +3,6 @@
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/logging/logger.hpp"
 #include "duckdb/main/client_data.hpp"
-#include "fmt/printf.h"
 #include "function_state.hpp"
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/common/helper.hpp"
@@ -13,7 +12,7 @@
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/storage/statistics/node_statistics.hpp"
 
-#include "pst_schema.hpp"
+#include "schema.hpp"
 #include "pstsdk/pst/folder.h"
 #include "utils.hpp"
 
@@ -49,7 +48,6 @@ PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientCo
 	for (auto &file : files) {
 		vector<node_id> folders;
 
-		// TODO error handling, for now this works to tell you if something is wrong with the file
 		try {
 			auto pst = pstsdk::pst(utils::to_wstring(file.path));
 			for (auto it = pst.folder_begin(); it != pst.folder_end(); ++it) {

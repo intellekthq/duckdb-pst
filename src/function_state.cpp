@@ -3,7 +3,7 @@
 #include "duckdb/common/open_file_info.hpp"
 #include "duckdb/common/vector_size.hpp"
 #include "duckdb/logging/logger.hpp"
-#include "pst_schema.hpp"
+#include "row_serializer.hpp"
 #include "pstsdk/pst/folder.h"
 #include "pstsdk/pst/message.h"
 #include "pstsdk/util/primitives.h"
@@ -259,7 +259,7 @@ idx_t PSTConcreteIteratorState<it, t>::emit_rows(DataChunk &output) {
 			break;
 		}
 
-		schema::into_row<t>(*this, output, *item, i);
+		row_serializer::into_row<t>(*this, output, *item, i);
 
 		++rows;
 	}
