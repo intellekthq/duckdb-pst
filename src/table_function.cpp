@@ -1,6 +1,7 @@
 #include "table_function.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/table_function.hpp"
+#include "duckdb/logging/logger.hpp"
 #include "duckdb/main/client_data.hpp"
 #include "fmt/printf.h"
 #include "function_state.hpp"
@@ -54,8 +55,8 @@ PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientCo
 			for (auto it = pst.folder_begin(); it != pst.folder_end(); ++it) {
 				folders.emplace_back(it->get_id());
 			}
-		} catch (...) {
-			std::cout << duckdb_fmt::sprintf("Unable to read PST file: %s", file.path) << std::endl;
+		} catch (const std::exception &e) {
+			DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", file.path, e.what());
 		}
 
 		this->pst_folders.push_back(std::move(folders));
@@ -89,10 +90,10 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 
 	switch (bind_data.mode) {
 	case PSTReadFunctionMode::Folder:
-		local_state = make_uniq<PSTConcreteIteratorState<pst::folder_iterator, folder>>(global_state);
+		local_state = make_uniq<PSTConcreteIteratorState<pst::folder_iterator, folder>>(global_state, ec);
 		break;
 	case PSTReadFunctionMode::Message:
-		local_state = make_uniq<PSTConcreteIteratorState<vector<node_id>::iterator, message>>(global_state);
+		local_state = make_uniq<PSTConcreteIteratorState<vector<node_id>::iterator, message>>(global_state, ec);
 		break;
 	default:
 		break;

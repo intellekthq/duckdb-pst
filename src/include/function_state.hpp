@@ -47,6 +47,8 @@ class PSTReadGlobalTableFunctionState : public GlobalTableFunctionState {
 public:
 	PSTReadGlobalTableFunctionState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids);
 	PSTReadFunctionMode mode;
+	const LogicalType &output_schema;
+
 	vector<column_t> column_ids;
 
 	idx_t MaxThreads() const override;
@@ -77,10 +79,12 @@ protected:
 	std::optional<vector<node_id>> message_batch;
 
 	OpenFileInfo file;
-	PSTReadGlobalTableFunctionState &global_state;
-	PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state);
+	PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state, ExecutionContext &ec);
 
 public:
+	ExecutionContext &ec;
+	PSTReadGlobalTableFunctionState &global_state;
+
 	virtual idx_t emit_rows(DataChunk &output) {
 		return 0;
 	}
@@ -102,7 +106,7 @@ protected:
 	void bind_iter();
 
 public:
-	PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state);
+	PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state, ExecutionContext &ec);
 
 	const bool finished();
 

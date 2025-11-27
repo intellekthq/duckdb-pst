@@ -1,242 +1,226 @@
 #include "pst_schema.hpp"
+#include "duckdb/common/types.hpp"
+#include "duckdb/common/types/value.hpp"
+#include "duckdb/logging/logger.hpp"
+#include "pstsdk/ltp/object.h"
+#include "pstsdk/ltp/propbag.h"
+#include "pstsdk/mapitags.h"
 #include "pstsdk/pst/folder.h"
+#include "pstsdk/util/primitives.h"
 #include "utils.hpp"
+#include <cstdint>
 
 namespace intellekt::duckpst::schema {
-template <>
-void into_row<pstsdk::folder>(PSTIteratorLocalTableFunctionState &local_state, DataChunk &output,
-                              pstsdk::folder &folder, idx_t row_number) {
-	auto &column_ids = local_state.column_ids();
-	for (idx_t col_idx = 0; col_idx < column_ids.size(); ++col_idx) {
-		auto col = column_ids[col_idx];
-		switch (col) {
-		case 0:
-			output.SetValue(col, row_number, Value(local_state.current_file().path));
-			break;
-		case 1:
-			output.SetValue(col, row_number, Value(utils::to_utf8(local_state.current_pst()->get_name())));
-			break;
-		case 2:
-			output.SetValue(col, row_number, Value::UINTEGER(folder.get_property_bag().get_node().get_parent_id()));
-			break;
-		case 3:
-			output.SetValue(col, row_number, Value::UINTEGER(folder.get_id()));
-			break;
-		case 4:
-			output.SetValue(col, row_number, Value(utils::to_utf8(folder.get_name())));
-			break;
-		case 5:
-			output.SetValue(col, row_number, Value::UINTEGER(folder.get_subfolder_count()));
-			break;
-		case 6:
-			output.SetValue(col, row_number, Value::BIGINT(folder.get_message_count()));
-			break;
-		case 7:
-			output.SetValue(col, row_number, Value::BIGINT(folder.get_unread_message_count()));
-			break;
-		default:
-			break;
+
+template <typename T>
+duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag, pstsdk::prop_id prop) {
+	if (!bag.prop_exists(prop))
+		return Value(nullptr);
+
+	T value = bag.read_prop<T>(prop);
+	Value duckdb_value = Value(nullptr);
+
+	if constexpr (std::is_integral_v<T>) {
+		if (t.id() == LogicalTypeId::ENUM) {
+			duckdb_value = Value::ENUM(value, t);
+		} else if (t.id() == LogicalTypeId::TIMESTAMP) {
+			time_t unixtime = pstsdk::filetime_to_time_t(value);
+			duckdb_value = Value::TIMESTAMP(timestamp_sec_t(unixtime));
 		}
 	}
+
+	if (!duckdb_value.IsNull())
+		return duckdb_value;
+
+	if constexpr (std::is_same_v<T, std::uint32_t>) {
+		duckdb_value = Value::UINTEGER(value);
+	} else if constexpr (std::is_same_v<T, size_t> || std::is_same_v<T, unsigned long long>) {
+		duckdb_value = Value::BIGINT(value);
+	} else {
+		duckdb_value = Value(value);
+	}
+
+	return duckdb_value;
 }
 
 template <>
-void into_row<pstsdk::message>(PSTIteratorLocalTableFunctionState &local_state, DataChunk &output, pstsdk::message &msg,
-                               idx_t row_number) {
-	auto &column_ids = local_state.column_ids();
+void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk &output, pstsdk::message &msg,
+                       idx_t row_number, idx_t column_index) {
 	auto &prop_bag = msg.get_property_bag();
+	auto schema_col = local_state.column_ids()[column_index];
+	auto col_type = StructType::GetChildType(local_state.global_state.output_schema, schema_col);
+	switch (schema_col) {
+	case 0:
+		output.SetValue(column_index, row_number, Value(local_state.current_file().path));
+		break;
+	case 1:
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_DISPLAY_NAME_A));
+		break;
+	case 2:
+		output.SetValue(column_index, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
+		break;
+	case 3:
+		output.SetValue(column_index, row_number, Value::UINTEGER(msg.get_id()));
+		break;
+	case 4:
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_SUBJECT_A));
+		break;
+	case 5:
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_SENDER_NAME_A));
+		break;
+	case 6:
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_SENDER_EMAIL_ADDRESS_A));
+		break;
+	case 7:
+		output.SetValue(column_index, row_number,
+		                from_prop<pstsdk::ulonglong>(col_type, prop_bag, PR_MESSAGE_DELIVERY_TIME));
+		break;
+	case 8:
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_MESSAGE_CLASS_A));
+		break;
+	case 9:
+		output.SetValue(column_index, row_number, from_prop<uint32_t>(col_type, prop_bag, PR_IMPORTANCE));
+		break;
+	case 10:
+		output.SetValue(column_index, row_number, from_prop<uint32_t>(col_type, prop_bag, PR_SENSITIVITY));
+		break;
+	case 11:
+		output.SetValue(column_index, row_number, from_prop<uint32_t>(col_type, prop_bag, PR_MESSAGE_FLAGS));
+		break;
+	case 12:
+		output.SetValue(column_index, row_number, Value::BIGINT(msg.size()));
+		break;
+	case 13: {
+		size_t attachment_count = msg.get_attachment_count();
+		output.SetValue(column_index, row_number, Value::BOOLEAN(attachment_count > 0));
+		break;
+	}
+	case 14: {
+		size_t attachment_count = msg.get_attachment_count();
+		output.SetValue(column_index, row_number, Value::UINTEGER(attachment_count));
+		break;
+	}
+	case 15:
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_BODY_A));
+		break;
+	case 16:
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_HTML));
+		break;
+	case 17:
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_INTERNET_MESSAGE_ID));
+		break;
+	case 18:
+		// PidTagConversationTopic
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_CONVERSATION_TOPIC_A));
+		break;
+	case 19: {
+		// Recipients
+		// vector<Value> recipients;
+		// for (auto it = msg.recipient_begin(); it != msg.recipient_end(); ++it) {
+		// 	auto recipient = *it;
+		// 	auto recipient_prop_bag = recipient.get_property_row();
 
-	for (idx_t col_idx = 0; col_idx < column_ids.size(); ++col_idx) {
-		auto col = column_ids[col_idx];
+		// 	vector<Value> values;
 
-		switch (col) {
-		case 0:
-			output.SetValue(col_idx, row_number, Value(local_state.current_file().path));
-			break;
-		case 1:
-			output.SetValue(col_idx, row_number, Value(utils::to_utf8(local_state.current_pst()->get_name())));
-			break;
-		case 2:
-			output.SetValue(col_idx, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
-			break;
-		case 3:
-			output.SetValue(col_idx, row_number, Value::UINTEGER(msg.get_id()));
-			break;
-		case 4:
-			// Subject
-			output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x37)));
-			break;
-		case 5:
-			// PidTagSenderName
-			if (prop_bag.prop_exists(0x0C1A)) {
-				output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x0C1A)));
-			} else {
-				output.SetValue(col_idx, row_number, Value(nullptr));
-			}
-			break;
-		case 6:
-			// PidTagSenderAddress
-			if (prop_bag.prop_exists(0x0C1F)) {
-				output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x0C1F)));
-			} else {
-				output.SetValue(col_idx, row_number, Value(nullptr));
-			}
-			break;
-		case 7:
-			// PidTagMessageDeliveryTime
-			if (prop_bag.prop_exists(0x0E06)) {
-				auto filetime = prop_bag.read_prop<pstsdk::ulonglong>(0x0E06);
-				time_t unixtime = pstsdk::filetime_to_time_t(filetime);
-				output.SetValue(col_idx, row_number, Value::TIMESTAMP(timestamp_sec_t(unixtime)));
-			} else {
-				output.SetValue(col_idx, row_number, Value(nullptr));
-			}
-			break;
-		case 8:
-			// PidTagMessageClass
-			if (prop_bag.prop_exists(0x001A)) {
-				output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x001A)));
-			} else {
-				output.SetValue(col_idx, row_number, Value(nullptr));
-			}
-			break;
-		case 9:
-			// PidTagImportance (defaults to 'normal')
-			if (prop_bag.prop_exists(0x0017)) {
-				uint32_t importance = prop_bag.read_prop<uint32_t>(0x0017);
-				output.SetValue(col_idx, row_number, Value::ENUM(importance, schema::IMPORTANCE_ENUM));
-			} else {
-				output.SetValue(col_idx, row_number, Value(nullptr));
-			}
-			break;
-		case 10:
-			// PidTagSensitivity (defaults to 'none')
-			if (prop_bag.prop_exists(0x0036)) {
-				uint32_t sensitivity = prop_bag.read_prop<uint32_t>(0x0036);
-				output.SetValue(col_idx, row_number, Value::ENUM(sensitivity, schema::SENSITIVITY_ENUM));
-			} else {
-				output.SetValue(col_idx, row_number, Value(nullptr));
-			}
-			break;
-		case 11:
-			// PidTagMessageFlags (bitmask)
-			if (prop_bag.prop_exists(0x0E07)) {
-				output.SetValue(col_idx, row_number, Value::UINTEGER(prop_bag.read_prop<uint32_t>(0x0E07)));
-			} else {
-				output.SetValue(col_idx, row_number, Value(nullptr));
-			}
-			break;
-		case 12:
-			output.SetValue(col_idx, row_number, Value::UINTEGER(msg.size()));
-			break;
-		case 13: {
-			size_t attachment_count = msg.get_attachment_count();
-			output.SetValue(col_idx, row_number, Value::BOOLEAN(attachment_count > 0));
-			break;
-		}
-		case 14: {
-			size_t attachment_count = msg.get_attachment_count();
-			output.SetValue(col_idx, row_number, Value::UINTEGER(attachment_count));
-			break;
-		}
-		case 15:
-			// Re-encode plaintext as UTF-8
-			try {
-				std::wstring body = msg.get_body();
-				output.SetValue(col_idx, row_number, Value(utils::to_utf8(body)));
-			} catch (...) {
-				output.SetValue(col_idx, row_number, Value(nullptr));
-			}
-			break;
-		case 16:
-			// Re-encode HTML body as UTF-8
-			try {
-				std::wstring html_body = msg.get_html_body();
-				output.SetValue(col_idx, row_number, Value(utils::to_utf8(html_body)));
-			} catch (...) {
-				output.SetValue(col_idx, row_number, Value(nullptr));
-			}
-			break;
-		case 17:
-			// PidTagInternetMessageId
-			if (prop_bag.prop_exists(0x1035)) {
-				output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x1035)));
-			} else {
-				output.SetValue(col_idx, row_number, Value(nullptr));
-			}
-			break;
-		case 18:
-			// PidTagConversationTopic
-			if (prop_bag.prop_exists(0x0070)) {
-				output.SetValue(col_idx, row_number, Value(utils::read_prop_utf8(prop_bag, 0x0070)));
-			} else {
-				output.SetValue(col_idx, row_number, Value(nullptr));
-			}
-			break;
-		case 19: {
-			// Recipients
-			vector<Value> recipients;
-			for (auto it = msg.recipient_begin(); it != msg.recipient_end(); ++it) {
-				auto recipient = *it;
-				auto recipient_prop_bag = recipient.get_property_row();
+		// 	values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, col),
+		// 	                                           recipient_prop_bag, PR_ACCOUNT_A));
+		// 	values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, col),
+		// 	                                           recipient_prop_bag, PR_EMAIL_ADDRESS_A));
+		// 	values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, col),
+		// 	                                           recipient_prop_bag, PR_DISPLAY_NAME_A));
+		// 	values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, col),
+		// 	                                           recipient_prop_bag, PR_ADDRTYPE_A));
+		// 	values.emplace_back(from_prop<recipient_type>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, col),
+		// 	                                              recipient_prop_bag, PR_RECIPIENT_TYPE));
 
-				vector<Value> values;
+		// 	recipients.emplace_back(Value::STRUCT(schema::RECIPIENT_SCHEMA, values));
+		// }
+		// output.SetValue(col_idx, row_number, Value::LIST(schema::RECIPIENT_SCHEMA, recipients));
+		break;
+	}
+	case 20: {
+		vector<Value> attachments;
+		// for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
+		//     auto attachment = *it;
+		//     auto attachment_prop_bag = attachment.get_property_bag();
 
-				Value account_name;
-				if (recipient.has_account_name()) {
-					account_name = Value(utils::read_prop_utf8(recipient_prop_bag, 0x3a00));
-				} else {
-					account_name = Value(nullptr);
-				}
+		//     vector<Value> values;
+		//     try {
+		//         values.emplace_back(Value(utils::read_prop_utf8(attachment_prop_bag, 0x3707)));
+		//     } catch (...) {
+		//         values.emplace_back(Value(utils::read_prop_utf8(attachment_prop_bag, 0x3704)));
+		//     }
+		//     values.emplace_back(Value::UBIGINT(attachment.size()));
+		//     values.emplace_back(Value(attachment.is_message()));
 
-				Value email_address;
-				if (recipient.has_email_address()) {
-					email_address = Value(utils::read_prop_utf8(recipient_prop_bag, 0x39fe));
-				} else {
-					email_address = Value(nullptr);
-				}
+		//     auto attachment_bytes = attachment.get_bytes();
+		//     values.emplace_back(Value::BLOB_RAW({attachment_bytes.begin(), attachment_bytes.end()}));
 
-				// Recipient display name
-				values.emplace_back(Value(utils::read_prop_utf8(recipient_prop_bag, 0x3001)));
-				values.emplace_back(account_name);
-				values.emplace_back(email_address);
+		//     attachments.emplace_back(Value::STRUCT(schema::ATTACHMENT_SCHEMA, values));
+		// }
 
-				// Address type
-				values.emplace_back(Value(utils::read_prop_utf8(recipient_prop_bag, 0x3002)));
-				values.emplace_back(Value::ENUM(recipient.get_type(), schema::RECIPIENT_TYPE_ENUM));
+		output.SetValue(column_index, row_number, Value::LIST(schema::ATTACHMENT_SCHEMA, attachments));
+		break;
+	}
+	default:
+		break;
+	}
+}
 
-				recipients.emplace_back(Value::STRUCT(schema::RECIPIENT_SCHEMA, values));
-			}
-			output.SetValue(col_idx, row_number, Value::LIST(schema::RECIPIENT_SCHEMA, recipients));
-			break;
-		}
-		case 20: {
-			vector<Value> attachments;
-			// for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
-			//     auto attachment = *it;
-			//     auto attachment_prop_bag = attachment.get_property_bag();
+template <>
+void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk &output,
+                       pstsdk::folder &folder, idx_t row_number, idx_t column_index) {
+	auto &prop_bag = folder.get_property_bag();
+	auto schema_col = local_state.column_ids()[column_index];
 
-			//     vector<Value> values;
-			//     try {
-			//         values.emplace_back(Value(utils::read_prop_utf8(attachment_prop_bag, 0x3707)));
-			//     } catch (...) {
-			//         values.emplace_back(Value(utils::read_prop_utf8(attachment_prop_bag, 0x3704)));
-			//     }
-			//     values.emplace_back(Value::UBIGINT(attachment.size()));
-			//     values.emplace_back(Value(attachment.is_message()));
+	switch (schema_col) {
+	case 0:
+		output.SetValue(schema_col, row_number, Value(local_state.current_file().path));
+		break;
+	case 1:
+		output.SetValue(schema_col, row_number, Value(utils::to_utf8(local_state.current_pst()->get_name())));
+		break;
+	case 2:
+		output.SetValue(schema_col, row_number, Value::UINTEGER(folder.get_property_bag().get_node().get_parent_id()));
+		break;
+	case 3:
+		output.SetValue(schema_col, row_number, Value::UINTEGER(folder.get_id()));
+		break;
+	case 4:
+		output.SetValue(schema_col, row_number, Value(utils::to_utf8(folder.get_name())));
+		break;
+	case 5:
+		output.SetValue(schema_col, row_number, Value::UINTEGER(folder.get_subfolder_count()));
+		break;
+	case 6:
+		output.SetValue(schema_col, row_number, Value::BIGINT(folder.get_message_count()));
+		break;
+	case 7:
+		output.SetValue(schema_col, row_number, Value::BIGINT(folder.get_unread_message_count()));
+		break;
+	default:
+		break;
+	}
+}
 
-			//     auto attachment_bytes = attachment.get_bytes();
-			//     values.emplace_back(Value::BLOB_RAW({attachment_bytes.begin(), attachment_bytes.end()}));
+template <typename Item>
+void into_row(PSTIteratorLocalTableFunctionState &local_state, DataChunk &output, Item &item, idx_t row_number) {
+	for (idx_t col_idx = 0; col_idx < local_state.column_ids().size(); ++col_idx) {
+		try {
+			set_output_column<Item>(local_state, output, item, row_number, col_idx);
+		} catch (std::exception &e) {
+			auto schema_col = local_state.column_ids()[col_idx];
+			auto output_schema = local_state.global_state.output_schema;
 
-			//     attachments.emplace_back(Value::STRUCT(schema::ATTACHMENT_SCHEMA, values));
-			// }
-
-			output.SetValue(col_idx, row_number, Value::LIST(schema::ATTACHMENT_SCHEMA, attachments));
-			break;
-		}
-		default:
-			break;
+			DUCKDB_LOG_ERROR(local_state.ec, "Failed to read column: %s (%s)\nError: %s",
+			                 StructType::GetChildName(output_schema, schema_col),
+			                 StructType::GetChildType(output_schema, schema_col).ToString(), e.what());
 		}
 	}
 }
+
+template void into_row<pstsdk::folder>(PSTIteratorLocalTableFunctionState &, DataChunk &, pstsdk::folder &, idx_t);
+template void into_row<pstsdk::message>(PSTIteratorLocalTableFunctionState &, DataChunk &, pstsdk::message &, idx_t);
+
 } // namespace intellekt::duckpst::schema

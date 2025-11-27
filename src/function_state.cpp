@@ -2,6 +2,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/open_file_info.hpp"
 #include "duckdb/common/vector_size.hpp"
+#include "duckdb/logging/logger.hpp"
 #include "pst_schema.hpp"
 #include "pstsdk/pst/folder.h"
 #include "pstsdk/pst/message.h"
@@ -18,7 +19,8 @@ using namespace pstsdk;
 // PSTReadGlobalTableFunctionState
 PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(const PSTReadTableFunctionData &bind_data,
                                                                  vector<column_t> column_ids)
-    : mode(bind_data.mode), column_ids(std::move(column_ids)), total_files(bind_data.files.size()) {
+    : mode(bind_data.mode), column_ids(std::move(column_ids)), total_files(bind_data.files.size()),
+      output_schema(bind_data.output_schema) {
 	for (auto &file : bind_data.files) {
 		files->push(file);
 	}
@@ -164,8 +166,9 @@ std::optional<std::pair<OpenFileInfo, vector<node_id>>> PSTReadGlobalTableFuncti
 }
 
 // PSTIteratorLocalTableFunctionState
-PSTIteratorLocalTableFunctionState::PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state)
-    : global_state(global_state) {
+PSTIteratorLocalTableFunctionState::PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state,
+                                                                       ExecutionContext &ec)
+    : global_state(global_state), ec(ec) {
 }
 
 const vector<column_t> &PSTIteratorLocalTableFunctionState::column_ids() {
@@ -174,8 +177,9 @@ const vector<column_t> &PSTIteratorLocalTableFunctionState::column_ids() {
 
 // PSTConcreteIteratorState
 template <typename it, typename t>
-PSTConcreteIteratorState<it, t>::PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state)
-    : PSTIteratorLocalTableFunctionState(global_state) {
+PSTConcreteIteratorState<it, t>::PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state,
+                                                          ExecutionContext &ec)
+    : PSTIteratorLocalTableFunctionState(global_state, ec) {
 }
 
 template <typename it, typename t>
