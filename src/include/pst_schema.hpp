@@ -5,7 +5,6 @@
 #include "duckdb/common/types/data_chunk.hpp"
 #include "duckdb/common/types/vector.hpp"
 #include "pstsdk/ltp/object.h"
-#include "pstsdk/ltp/table.h"
 #include "pstsdk/util/primitives.h"
 
 // Everything that we want to emit as a row or column
@@ -69,38 +68,52 @@ static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({{"filename", LogicalT
                                                            {"is_message", LogicalType::BOOLEAN},
                                                            {"bytes", LogicalType::BLOB}});
 
-static const auto MESSAGE_SCHEMA = LogicalType::STRUCT({{"pst_path", LogicalType::VARCHAR},
-                                                        {"pst_name", LogicalType::VARCHAR},
-                                                        {"folder_id", LogicalType::UINTEGER},
-                                                        {"message_id", LogicalType::UINTEGER},
-                                                        {"subject", LogicalType::VARCHAR},
-                                                        {"sender_name", LogicalType::VARCHAR},
-                                                        {"sender_email_address", LogicalType::VARCHAR},
-                                                        {"message_delivery_time", LogicalType::TIMESTAMP},
-                                                        {"message_class", LogicalType::VARCHAR},
-                                                        {"importance", IMPORTANCE_ENUM},
-                                                        {"sensitivity", SENSITIVITY_ENUM},
-                                                        {"message_flags", LogicalType::UINTEGER},
-                                                        {"message_size", LogicalType::UINTEGER},
-                                                        {"has_attachments", LogicalType::BOOLEAN},
-                                                        {"attachment_count", LogicalType::UINTEGER},
-                                                        {"body", LogicalType::VARCHAR},
-                                                        {"body_html", LogicalType::VARCHAR},
-                                                        {"internet_message_id", LogicalType::VARCHAR},
-                                                        {"conversation_topic", LogicalType::VARCHAR},
-                                                        {"recipients", LogicalType::LIST(RECIPIENT_SCHEMA)},
-                                                        {"attachments", LogicalType::LIST(ATTACHMENT_SCHEMA)}});
+// We'll generate our table function output schemas using x-macros so the serialization code
+// doesn't have to bind against a position ordinal and we can move columns around
 
-static const auto FOLDER_SCHEMA = LogicalType::STRUCT({
-    {"pst_path", LogicalType::VARCHAR},
-    {"pst_name", LogicalType::VARCHAR},
-    {"parent_folder_id", LogicalType::UINTEGER},
-    {"folder_id", LogicalType::UINTEGER},
-    {"folder_name", LogicalType::VARCHAR},
-    {"subfolder_count", LogicalType::UINTEGER},
-    {"message_count", LogicalType::BIGINT},
-    {"unread_message_count", LogicalType::BIGINT},
-});
+#define SCHEMA_CHILD(name, type)     {#name, type},
+#define SCHEMA_CHILD_NAME(name, ...) name,
+
+#define MESSAGE_CHILDREN(LT)                                                                                           \
+	LT(pst_path, LogicalType::VARCHAR)                                                                                 \
+	LT(pst_name, LogicalType::VARCHAR)                                                                                 \
+	LT(folder_id, LogicalType::UINTEGER)                                                                               \
+	LT(message_id, LogicalType::UINTEGER)                                                                              \
+	LT(subject, LogicalType::VARCHAR)                                                                                  \
+	LT(sender_name, LogicalType::VARCHAR)                                                                              \
+	LT(sender_email_address, LogicalType::VARCHAR)                                                                     \
+	LT(message_delivery_time, LogicalType::TIMESTAMP)                                                                  \
+	LT(message_class, LogicalType::VARCHAR)                                                                            \
+	LT(importance, IMPORTANCE_ENUM)                                                                                    \
+	LT(sensitivity, SENSITIVITY_ENUM)                                                                                  \
+	LT(message_flags, LogicalType::UINTEGER)                                                                           \
+	LT(message_size, LogicalType::UINTEGER)                                                                            \
+	LT(has_attachments, LogicalType::BOOLEAN)                                                                          \
+	LT(attachment_count, LogicalType::UINTEGER)                                                                        \
+	LT(body, LogicalType::VARCHAR)                                                                                     \
+	LT(body_html, LogicalType::VARCHAR)                                                                                \
+	LT(internet_message_id, LogicalType::VARCHAR)                                                                      \
+	LT(conversation_topic, LogicalType::VARCHAR)                                                                       \
+	LT(recipients, LogicalType::LIST(RECIPIENT_SCHEMA))                                                                \
+	LT(attachments, LogicalType::LIST(ATTACHMENT_SCHEMA))
+
+enum class MessageProjection { MESSAGE_CHILDREN(SCHEMA_CHILD_NAME) };
+
+static const auto MESSAGE_SCHEMA = LogicalType::STRUCT({MESSAGE_CHILDREN(SCHEMA_CHILD)});
+
+#define FOLDER_CHILDREN(LT)                                                                                            \
+	LT(pst_path, LogicalType::VARCHAR)                                                                                 \
+	LT(pst_name, LogicalType::VARCHAR)                                                                                 \
+	LT(parent_folder_id, LogicalType::UINTEGER)                                                                        \
+	LT(folder_id, LogicalType::UINTEGER)                                                                               \
+	LT(folder_name, LogicalType::VARCHAR)                                                                              \
+	LT(subfolder_count, LogicalType::UINTEGER)                                                                         \
+	LT(message_count, LogicalType::BIGINT)                                                                             \
+	LT(unread_message_count, LogicalType::BIGINT)
+
+enum class FolderProjection { FOLDER_CHILDREN(SCHEMA_CHILD_NAME) };
+
+static const auto FOLDER_SCHEMA = LogicalType::STRUCT({FOLDER_CHILDREN(SCHEMA_CHILD)});
 
 template <typename T>
 duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag, pstsdk::prop_id prop);
