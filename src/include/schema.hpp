@@ -77,7 +77,7 @@ static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({{"filename", LogicalT
 	LT(subject, LogicalType::VARCHAR)                                                                                  \
 	LT(sender_name, LogicalType::VARCHAR)                                                                              \
 	LT(sender_email_address, LogicalType::VARCHAR)                                                                     \
-	LT(message_delivery_time, LogicalType::TIMESTAMP)                                                                  \
+	LT(message_delivery_time, LogicalType::TIMESTAMP_S)                                                                  \
 	LT(message_class, LogicalType::VARCHAR)                                                                            \
 	LT(importance, IMPORTANCE_ENUM)                                                                                    \
 	LT(sensitivity, SENSITIVITY_ENUM)                                                                                  \

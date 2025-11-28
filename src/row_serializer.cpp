@@ -17,15 +17,17 @@ duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag
 	if (!bag.prop_exists(prop))
 		return Value(nullptr);
 
-	T value = bag.read_prop<T>(prop);
+	std::optional<T> value = bag.read_prop_if_exists<T>(prop);
 	Value duckdb_value = Value(nullptr);
+
+	if (!value.has_value()) return duckdb_value;
 
 	if constexpr (std::is_integral_v<T>) {
 		if (t.id() == LogicalTypeId::ENUM) {
-			duckdb_value = Value::ENUM(value, t);
-		} else if (t.id() == LogicalTypeId::TIMESTAMP) {
-			time_t unixtime = pstsdk::filetime_to_time_t(value);
-			duckdb_value = Value::TIMESTAMP(timestamp_sec_t(unixtime));
+			duckdb_value = Value::ENUM(*value, t);
+		} else if (t.id() == LogicalTypeId::TIMESTAMP_SEC) {
+			time_t unixtime = pstsdk::filetime_to_time_t(*value);
+			duckdb_value = Value::TIMESTAMPSEC(timestamp_sec_t(unixtime));
 		}
 	}
 
@@ -33,11 +35,11 @@ duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag
 		return duckdb_value;
 
 	if constexpr (std::is_same_v<T, std::uint32_t>) {
-		duckdb_value = Value::UINTEGER(value);
+		duckdb_value = Value::UINTEGER(*value);
 	} else if constexpr (std::is_same_v<T, size_t> || std::is_same_v<T, unsigned long long>) {
-		duckdb_value = Value::BIGINT(value);
+		duckdb_value = Value::BIGINT(*value);
 	} else {
-		duckdb_value = Value(value);
+		duckdb_value = Value(*value);
 	}
 
 	return duckdb_value;
@@ -112,7 +114,6 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_INTERNET_MESSAGE_ID));
 		break;
 	case static_cast<int>(schema::MessageProjection::conversation_topic):
-		// PidTagConversationTopic
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_CONVERSATION_TOPIC_A));
 		break;
 	case static_cast<int>(schema::MessageProjection::recipients): {
