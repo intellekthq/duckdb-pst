@@ -9,6 +9,7 @@
 #include "pstsdk/pst/folder.h"
 #include "pstsdk/util/primitives.h"
 #include <cstdint>
+#include <type_traits>
 
 namespace intellekt::duckpst::row_serializer {
 
@@ -20,25 +21,49 @@ duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag
 	std::optional<T> value = bag.read_prop_if_exists<T>(prop);
 	Value duckdb_value = Value(nullptr);
 
-	if (!value.has_value()) return duckdb_value;
+	if (!value.has_value())
+		return duckdb_value;
 
 	if constexpr (std::is_integral_v<T>) {
+		// TODO
 		if (t.id() == LogicalTypeId::ENUM) {
+			auto enum_size = EnumType::GetSize(t);
+			if (*value >= enum_size)
+				return duckdb_value;
 			duckdb_value = Value::ENUM(*value, t);
 		} else if (t.id() == LogicalTypeId::TIMESTAMP_SEC) {
 			time_t unixtime = pstsdk::filetime_to_time_t(*value);
 			duckdb_value = Value::TIMESTAMPSEC(timestamp_sec_t(unixtime));
 		}
+	} else if constexpr (std::is_same_v<T, std::vector<unsigned char>>) {
+		std::string blob({value->begin(), value->end()});
+		duckdb_value = Value::BLOB_RAW(blob);
 	}
 
 	if (!duckdb_value.IsNull())
 		return duckdb_value;
 
-	if constexpr (std::is_same_v<T, std::uint32_t>) {
+	if constexpr (std::is_same_v<T, std::uint8_t>) {
+		duckdb_value = Value::UTINYINT(*value);
+	} else if constexpr (std::is_same_v<T, std::uint16_t>) {
+		duckdb_value = Value::USMALLINT(*value);
+	} else if constexpr (std::is_same_v<T, std::uint32_t>) {
 		duckdb_value = Value::UINTEGER(*value);
-	} else if constexpr (std::is_same_v<T, size_t> || std::is_same_v<T, unsigned long long>) {
+	} else if constexpr (std::is_same_v<T, std::uint64_t>) {
+		duckdb_value = Value::UBIGINT(*value);
+	} else if constexpr (std::is_same_v<T, unsigned long long>) {
+		duckdb_value = Value::UHUGEINT(*value);
+	} else if constexpr (std::is_same_v<T, std::int8_t>) {
+		duckdb_value = Value::TINYINT(*value);
+	} else if constexpr (std::is_same_v<T, std::int16_t>) {
+		duckdb_value = Value::SMALLINT(*value);
+	} else if constexpr (std::is_same_v<T, std::int32_t>) {
+		duckdb_value = Value::INTEGER(*value);
+	} else if constexpr (std::is_same_v<T, std::int64_t>) {
 		duckdb_value = Value::BIGINT(*value);
-	} else {
+	} else if constexpr (std::is_same_v<T, long long>) {
+		duckdb_value = Value::HUGEINT(*value);
+	} else if constexpr (!std::is_same_v<T, std::vector<unsigned char>>) {
 		duckdb_value = Value(*value);
 	}
 
@@ -125,15 +150,17 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 			vector<Value> values;
 
 			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 0),
-			                                           recipient_prop_bag, PR_ACCOUNT_A));
-			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 1),
-			                                           recipient_prop_bag, PR_EMAIL_ADDRESS_A));
-			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 2),
 			                                           recipient_prop_bag, PR_DISPLAY_NAME_A));
+			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 1),
+			                                           recipient_prop_bag, PR_ACCOUNT_A));
+			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 2),
+			                                           recipient_prop_bag, PR_EMAIL_ADDRESS_A));
 			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 3),
 			                                           recipient_prop_bag, PR_ADDRTYPE_A));
-			values.emplace_back(from_prop<recipient_type>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 4),
-			                                              recipient_prop_bag, PR_RECIPIENT_TYPE));
+			values.emplace_back(from_prop<int32_t>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 4),
+			                                       recipient_prop_bag, PR_RECIPIENT_TYPE));
+			values.emplace_back(from_prop<int32_t>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 5),
+			                                       recipient_prop_bag, PR_RECIPIENT_TYPE));
 
 			recipients.emplace_back(Value::STRUCT(schema::RECIPIENT_SCHEMA, values));
 		}
@@ -142,24 +169,31 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 	}
 	case static_cast<int>(schema::MessageProjection::attachments): {
 		vector<Value> attachments;
-		// for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
-		//     auto attachment = *it;
-		//     auto attachment_prop_bag = attachment.get_property_bag();
+		for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
+			auto attachment = *it;
+			auto attachment_prop_bag = attachment.get_property_bag();
 
-		//     vector<Value> values;
-		//     try {
-		//         values.emplace_back(Value(utils::read_prop_utf8(attachment_prop_bag, 0x3707)));
-		//     } catch (...) {
-		//         values.emplace_back(Value(utils::read_prop_utf8(attachment_prop_bag, 0x3704)));
-		//     }
-		//     values.emplace_back(Value::UBIGINT(attachment.size()));
-		//     values.emplace_back(Value(attachment.is_message()));
+			vector<Value> values;
+			values.emplace_back(from_prop<int32_t>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 0),
+			                                       attachment_prop_bag, PR_ATTACH_NUM));
+			values.emplace_back(from_prop<int32_t>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 1),
+			                                       attachment_prop_bag, PR_ATTACH_METHOD));
+			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 2),
+			                                           attachment_prop_bag, PR_ATTACH_FILENAME_A));
+			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 3),
+			                                           attachment_prop_bag, PR_ATTACH_MIME_TAG_A));
+			values.emplace_back(from_prop<uint32_t>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 4),
+			                                        attachment_prop_bag, PR_ATTACH_SIZE));
 
-		//     auto attachment_bytes = attachment.get_bytes();
-		//     values.emplace_back(Value::BLOB_RAW({attachment_bytes.begin(), attachment_bytes.end()}));
+			// when ATTACH_BY_VALUE
+			// TODO: support the other attach methods
+			// https://stackoverflow.com/a/4693174
+			values.emplace_back(Value(attachment.is_message()));
+			values.emplace_back(from_prop<std::vector<pstsdk::byte>>(
+			    StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 6), attachment_prop_bag, PR_ATTACH_DATA_BIN));
 
-		//     attachments.emplace_back(Value::STRUCT(schema::ATTACHMENT_SCHEMA, values));
-		// }
+			attachments.emplace_back(Value::STRUCT(schema::ATTACHMENT_SCHEMA, values));
+		}
 
 		output.SetValue(column_index, row_number, Value::LIST(schema::ATTACHMENT_SCHEMA, attachments));
 		break;

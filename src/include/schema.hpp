@@ -56,9 +56,13 @@ static const auto RECIPIENT_SCHEMA = LogicalType::STRUCT({{"name", LogicalType::
                                                           {"account_name", LogicalType::VARCHAR},
                                                           {"email_address", LogicalType::VARCHAR},
                                                           {"address_type", LogicalType::VARCHAR},
-                                                          {"recipient_type", RECIPIENT_TYPE_ENUM}});
+                                                          {"recipient_type", RECIPIENT_TYPE_ENUM},
+                                                          {"recipient_type_raw", LogicalType::INTEGER}});
 
-static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({{"filename", LogicalType::VARCHAR},
+static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({{"attach_num", LogicalType::INTEGER},
+                                                           {"attach_method", ATTACH_METHOD_ENUM},
+                                                           {"filename", LogicalType::VARCHAR},
+                                                           {"mime_type", LogicalType::VARCHAR},
                                                            {"size", LogicalType::UBIGINT},
                                                            {"is_message", LogicalType::BOOLEAN},
                                                            {"bytes", LogicalType::BLOB}});
@@ -77,7 +81,7 @@ static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({{"filename", LogicalT
 	LT(subject, LogicalType::VARCHAR)                                                                                  \
 	LT(sender_name, LogicalType::VARCHAR)                                                                              \
 	LT(sender_email_address, LogicalType::VARCHAR)                                                                     \
-	LT(message_delivery_time, LogicalType::TIMESTAMP_S)                                                                  \
+	LT(message_delivery_time, LogicalType::TIMESTAMP_S)                                                                \
 	LT(message_class, LogicalType::VARCHAR)                                                                            \
 	LT(importance, IMPORTANCE_ENUM)                                                                                    \
 	LT(sensitivity, SENSITIVITY_ENUM)                                                                                  \
