@@ -166,6 +166,9 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 		output.SetValue(column_index, row_number, Value::UBIGINT(attachment_count));
 		break;
 	}
+	case static_cast<int>(schema::MessageProjection::body_crc):
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_BODY_CRC));
+		break;
 	case static_cast<int>(schema::MessageProjection::body):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_BODY_A));
 		break;

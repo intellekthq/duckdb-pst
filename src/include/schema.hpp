@@ -89,6 +89,7 @@ static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({{"attach_content_id",
 	LT(message_size, LogicalType::UBIGINT)                                                                             \
 	LT(has_attachments, LogicalType::BOOLEAN)                                                                          \
 	LT(attachment_count, LogicalType::UINTEGER)                                                                        \
+	LT(body_crc, LogicalType::INTEGER)                                                                                 \
 	LT(body, LogicalType::VARCHAR)                                                                                     \
 	LT(body_html, LogicalType::VARCHAR)                                                                                \
 	LT(internet_message_id, LogicalType::VARCHAR)                                                                      \
