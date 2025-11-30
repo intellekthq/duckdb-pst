@@ -107,23 +107,59 @@ duckdb::Value into_struct(const LogicalType &t, pstsdk::recipient recipient) {
 }
 
 template <>
+void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk &output,
+                       pstsdk::const_property_object &bag, idx_t row_number, idx_t column_index) {
+	auto schema_col = local_state.column_ids()[column_index];
+	auto &col_type = StructType::GetChildType(local_state.global_state.output_schema, schema_col);
+	auto &pst_bag = local_state.current_pst()->get_property_bag();
+
+	switch (schema_col) {
+	case static_cast<int>(schema::CommonProjection::pst_path):
+		output.SetValue(column_index, row_number, Value(local_state.current_file().path));
+		break;
+	case static_cast<int>(schema::CommonProjection::pst_name):
+		output.SetValue(
+		    column_index, row_number,
+		    from_prop<std::string>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_DISPLAY_NAME_A));
+		break;
+	case static_cast<int>(schema::CommonProjection::row_id):
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, bag, PR_ROWID));
+		break;
+	case static_cast<int>(schema::CommonProjection::entry_id):
+		output.SetValue(column_index, row_number, from_prop<std::vector<pstsdk::byte>>(col_type, bag, PR_ENTRYID));
+		break;
+	case static_cast<int>(schema::CommonProjection::parent_entry_id):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::vector<pstsdk::byte>>(col_type, bag, PR_PARENT_ENTRYID));
+		break;
+	case static_cast<int>(schema::CommonProjection::display_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, bag, PR_DISPLAY_NAME_A));
+		break;
+	case static_cast<int>(schema::CommonProjection::comment):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, bag, PR_COMMENT_A));
+		break;
+	case static_cast<int>(schema::CommonProjection::creation_time):
+		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, bag, PR_CREATION_TIME));
+		break;
+	case static_cast<int>(schema::CommonProjection::last_modified):
+		output.SetValue(column_index, row_number,
+		                from_prop<pstsdk::ulonglong>(col_type, bag, PR_LAST_MODIFICATION_TIME));
+		break;
+	default:
+		break;
+	}
+}
+
+template <>
 void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk &output, pstsdk::message &msg,
                        idx_t row_number, idx_t column_index) {
-	auto &pst_prop_bag = const_cast<pstsdk::property_bag &>(local_state.current_pst()->get_property_bag());
 	auto &prop_bag = msg.get_property_bag();
+	set_output_column<const_property_object>(local_state, output, prop_bag, row_number, column_index);
+
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.global_state.output_schema, schema_col);
 
 	switch (schema_col) {
-	case static_cast<int>(schema::MessageProjection::pst_path):
-		output.SetValue(column_index, row_number, Value(local_state.current_file().path));
-		break;
-	case static_cast<int>(schema::MessageProjection::pst_name):
-		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, pst_prop_bag, PR_DISPLAY_NAME_A));
-		break;
-	case static_cast<int>(schema::MessageProjection::folder_id):
-		output.SetValue(column_index, row_number, Value::UBIGINT(prop_bag.get_node().get_parent_id()));
-		break;
 	case static_cast<int>(schema::MessageProjection::message_id):
 		output.SetValue(column_index, row_number, Value::UBIGINT(msg.get_id()));
 		break;
@@ -222,17 +258,12 @@ template <>
 void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk &output,
                        pstsdk::folder &folder, idx_t row_number, idx_t column_index) {
 	auto &prop_bag = folder.get_property_bag();
-	auto &pst_prop_bag = const_cast<pstsdk::property_bag &>(local_state.current_pst()->get_property_bag());
+	set_output_column<const_property_object>(local_state, output, prop_bag, row_number, column_index);
+
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.global_state.output_schema, schema_col);
 
 	switch (schema_col) {
-	case static_cast<int>(schema::FolderProjection::pst_path):
-		output.SetValue(schema_col, row_number, Value(local_state.current_file().path));
-		break;
-	case static_cast<int>(schema::FolderProjection::pst_name):
-		output.SetValue(schema_col, row_number, from_prop<std::string>(col_type, pst_prop_bag, PR_DISPLAY_NAME_A));
-		break;
 	case static_cast<int>(schema::FolderProjection::parent_folder_id):
 		output.SetValue(schema_col, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
 		break;
