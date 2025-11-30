@@ -59,7 +59,7 @@ static const auto RECIPIENT_SCHEMA = LogicalType::STRUCT({{"name", LogicalType::
                                                           {"recipient_type", RECIPIENT_TYPE_ENUM},
                                                           {"recipient_type_raw", LogicalType::INTEGER}});
 
-static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({{"attach_num", LogicalType::INTEGER},
+static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({{"attach_content_id", LogicalType::VARCHAR},
                                                            {"attach_method", ATTACH_METHOD_ENUM},
                                                            {"filename", LogicalType::VARCHAR},
                                                            {"mime_type", LogicalType::VARCHAR},
@@ -85,8 +85,8 @@ static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({{"attach_num", Logica
 	LT(message_class, LogicalType::VARCHAR)                                                                            \
 	LT(importance, IMPORTANCE_ENUM)                                                                                    \
 	LT(sensitivity, SENSITIVITY_ENUM)                                                                                  \
-	LT(message_flags, LogicalType::UINTEGER)                                                                           \
-	LT(message_size, LogicalType::UINTEGER)                                                                            \
+	LT(message_flags, LogicalType::INTEGER)                                                                            \
+	LT(message_size, LogicalType::UBIGINT)                                                                             \
 	LT(has_attachments, LogicalType::BOOLEAN)                                                                          \
 	LT(attachment_count, LogicalType::UINTEGER)                                                                        \
 	LT(body, LogicalType::VARCHAR)                                                                                     \

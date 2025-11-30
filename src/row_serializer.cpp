@@ -15,9 +15,6 @@ namespace intellekt::duckpst::row_serializer {
 
 template <typename T>
 duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag, pstsdk::prop_id prop) {
-	if (!bag.prop_exists(prop))
-		return Value(nullptr);
-
 	std::optional<T> value = bag.read_prop_if_exists<T>(prop);
 	Value duckdb_value = Value(nullptr);
 
@@ -25,12 +22,8 @@ duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag
 		return duckdb_value;
 
 	if constexpr (std::is_integral_v<T>) {
-		// TODO
 		if (t.id() == LogicalTypeId::ENUM) {
-			auto enum_size = EnumType::GetSize(t);
-			if (*value >= enum_size)
-				return duckdb_value;
-			duckdb_value = Value::ENUM(*value, t);
+			duckdb_value = Value::ENUM(boost::numeric_cast<uint64_t>(*value), t);
 		} else if (t.id() == LogicalTypeId::TIMESTAMP_SEC) {
 			time_t unixtime = pstsdk::filetime_to_time_t(*value);
 			duckdb_value = Value::TIMESTAMPSEC(timestamp_sec_t(unixtime));
@@ -77,6 +70,7 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 	auto &prop_bag = msg.get_property_bag();
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.global_state.output_schema, schema_col);
+
 	switch (schema_col) {
 	case static_cast<int>(schema::MessageProjection::pst_path):
 		output.SetValue(column_index, row_number, Value(local_state.current_file().path));
@@ -85,10 +79,10 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, pst_prop_bag, PR_DISPLAY_NAME_A));
 		break;
 	case static_cast<int>(schema::MessageProjection::folder_id):
-		output.SetValue(column_index, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
+		output.SetValue(column_index, row_number, Value::UBIGINT(prop_bag.get_node().get_parent_id()));
 		break;
 	case static_cast<int>(schema::MessageProjection::message_id):
-		output.SetValue(column_index, row_number, Value::UINTEGER(msg.get_id()));
+		output.SetValue(column_index, row_number, Value::UBIGINT(msg.get_id()));
 		break;
 	case static_cast<int>(schema::MessageProjection::subject):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_SUBJECT_A));
@@ -108,16 +102,16 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_MESSAGE_CLASS_A));
 		break;
 	case static_cast<int>(schema::MessageProjection::importance):
-		output.SetValue(column_index, row_number, from_prop<uint32_t>(col_type, prop_bag, PR_IMPORTANCE));
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_IMPORTANCE));
 		break;
 	case static_cast<int>(schema::MessageProjection::sensitivity):
-		output.SetValue(column_index, row_number, from_prop<uint32_t>(col_type, prop_bag, PR_SENSITIVITY));
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_SENSITIVITY));
 		break;
 	case static_cast<int>(schema::MessageProjection::message_flags):
-		output.SetValue(column_index, row_number, from_prop<uint32_t>(col_type, prop_bag, PR_MESSAGE_FLAGS));
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_MESSAGE_FLAGS));
 		break;
 	case static_cast<int>(schema::MessageProjection::message_size):
-		output.SetValue(column_index, row_number, Value::BIGINT(msg.size()));
+		output.SetValue(column_index, row_number, Value::UBIGINT(msg.size()));
 		break;
 	case static_cast<int>(schema::MessageProjection::has_attachments): {
 		size_t attachment_count = msg.get_attachment_count();
@@ -126,7 +120,7 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 	}
 	case static_cast<int>(schema::MessageProjection::attachment_count): {
 		size_t attachment_count = msg.get_attachment_count();
-		output.SetValue(column_index, row_number, Value::UINTEGER(attachment_count));
+		output.SetValue(column_index, row_number, Value::UBIGINT(attachment_count));
 		break;
 	}
 	case static_cast<int>(schema::MessageProjection::body):
@@ -174,23 +168,25 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 			auto attachment_prop_bag = attachment.get_property_bag();
 
 			vector<Value> values;
-			values.emplace_back(from_prop<int32_t>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 0),
-			                                       attachment_prop_bag, PR_ATTACH_NUM));
+			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 0),
+			                                           attachment_prop_bag, PR_ATTACH_CONTENT_ID));
 			values.emplace_back(from_prop<int32_t>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 1),
 			                                       attachment_prop_bag, PR_ATTACH_METHOD));
 			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 2),
 			                                           attachment_prop_bag, PR_ATTACH_FILENAME_A));
 			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 3),
 			                                           attachment_prop_bag, PR_ATTACH_MIME_TAG_A));
-			values.emplace_back(from_prop<uint32_t>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 4),
-			                                        attachment_prop_bag, PR_ATTACH_SIZE));
+			values.emplace_back(Value::UBIGINT(attachment.content_size()));
 
 			// when ATTACH_BY_VALUE
 			// TODO: support the other attach methods
 			// https://stackoverflow.com/a/4693174
-			values.emplace_back(Value(attachment.is_message()));
-			values.emplace_back(from_prop<std::vector<pstsdk::byte>>(
-			    StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 6), attachment_prop_bag, PR_ATTACH_DATA_BIN));
+			values.emplace_back(Value::BOOLEAN(attachment.is_message()));
+
+			if (attachment.content_size() > 0) {
+				values.emplace_back(from_prop<std::vector<pstsdk::byte>>(
+				    StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 6), attachment_prop_bag, PR_ATTACH_DATA_BIN));
+			}
 
 			attachments.emplace_back(Value::STRUCT(schema::ATTACHMENT_SCHEMA, values));
 		}
@@ -253,6 +249,8 @@ void into_row(PSTIteratorLocalTableFunctionState &local_state, DataChunk &output
 			DUCKDB_LOG_ERROR(local_state.ec, "Failed to read column: %s (%s)\nError: %s",
 			                 StructType::GetChildName(output_schema, schema_col),
 			                 StructType::GetChildType(output_schema, schema_col).ToString(), e.what());
+
+			output.SetValue(col_idx, row_number, Value(nullptr));
 		}
 	}
 }
