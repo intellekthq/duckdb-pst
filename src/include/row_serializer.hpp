@@ -20,4 +20,7 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 template <typename Item>
 void into_row(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk &output, Item &item, idx_t row_number);
 
+template <typename Item>
+duckdb::Value into_struct(const LogicalType &t, Item item);
+
 } // namespace intellekt::duckpst::row_serializer

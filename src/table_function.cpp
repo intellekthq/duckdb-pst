@@ -51,14 +51,18 @@ PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientCo
 		try {
 			auto pst = pstsdk::pst(utils::to_wstring(file.path));
 			for (auto it = pst.folder_begin(); it != pst.folder_end(); ++it) {
+				this->message_count += it->get_message_count();
 				folders.emplace_back(it->get_id());
 			}
 		} catch (const std::exception &e) {
 			DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", file.path, e.what());
 		}
 
+		this->folder_count += folders.size();
 		this->pst_folders.push_back(std::move(folders));
 	}
+
+	this->file_count += files.size();
 }
 
 void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalType> &return_types,
@@ -118,28 +122,17 @@ unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const Function
 	auto pst_data = data->Cast<PSTReadTableFunctionData>();
 	idx_t estimated_cardinality = 0;
 
-	// TODO: need to do a pass of "how many times do we open the file"
-	for (auto p : boost::combine(pst_data.files, pst_data.pst_folders)) {
-		auto &[file, folders] = p;
-
-		switch (pst_data.mode) {
-		case PSTReadFunctionMode::Folder: {
-			estimated_cardinality += folders.size();
-			break;
-		}
-		case PSTReadFunctionMode::Message: {
-			auto pst = pstsdk::pst(utils::to_wstring(file.path));
-
-			for (auto folder_id : folders) {
-				auto folder = pst.open_folder(folder_id);
-				estimated_cardinality += folder.get_message_count();
-			}
-
-			break;
-		}
-		default:
-			break;
-		}
+	switch (pst_data.mode) {
+	case PSTReadFunctionMode::Folder: {
+		estimated_cardinality += pst_data.folder_count;
+		break;
+	}
+	case PSTReadFunctionMode::Message: {
+		estimated_cardinality += pst_data.message_count;
+		break;
+	}
+	default:
+		break;
 	}
 
 	auto stats = make_uniq<NodeStatistics>(estimated_cardinality);

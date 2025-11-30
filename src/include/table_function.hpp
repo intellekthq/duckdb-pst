@@ -32,6 +32,10 @@ public:
 	const PSTReadFunctionMode mode;
 	const LogicalType &output_schema;
 
+	idx_t file_count;
+	idx_t folder_count;
+	idx_t message_count;
+
 	// Make a `TableFunctionData` from a path, context, and schema
 	PSTReadTableFunctionData(const string &&path, ClientContext &ctx, const PSTReadFunctionMode mode);
 

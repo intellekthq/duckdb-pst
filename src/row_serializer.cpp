@@ -1,4 +1,5 @@
 #include "row_serializer.hpp"
+#include "pstsdk/pst/message.h"
 #include "schema.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/types/value.hpp"
@@ -61,6 +62,48 @@ duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag
 	}
 
 	return duckdb_value;
+}
+
+template <>
+duckdb::Value into_struct(const LogicalType &t, pstsdk::attachment attachment) {
+	auto attachment_prop_bag = attachment.get_property_bag();
+
+	vector<Value> values;
+	values.emplace_back(
+	    from_prop<std::string>(StructType::GetChildType(t, 0), attachment_prop_bag, PR_ATTACH_CONTENT_ID));
+	values.emplace_back(from_prop<int32_t>(StructType::GetChildType(t, 1), attachment_prop_bag, PR_ATTACH_METHOD));
+	values.emplace_back(
+	    from_prop<std::string>(StructType::GetChildType(t, 2), attachment_prop_bag, PR_ATTACH_FILENAME_A));
+	values.emplace_back(
+	    from_prop<std::string>(StructType::GetChildType(t, 3), attachment_prop_bag, PR_ATTACH_MIME_TAG_A));
+	values.emplace_back(Value::UBIGINT(attachment.content_size()));
+
+	// when ATTACH_BY_VALUE
+	// TODO: support the other attach methods
+	// https://stackoverflow.com/a/4693174
+	values.emplace_back(Value::BOOLEAN(attachment.is_message()));
+
+	if (!attachment.is_message() && attachment.content_size() > 0) {
+		values.emplace_back(from_prop<std::vector<pstsdk::byte>>(StructType::GetChildType(t, 6), attachment_prop_bag,
+		                                                         PR_ATTACH_DATA_BIN));
+	}
+
+	return Value::STRUCT(t, values);
+}
+
+template <>
+duckdb::Value into_struct(const LogicalType &t, pstsdk::recipient recipient) {
+	auto recipient_prop_bag = recipient.get_property_row();
+	vector<Value> values;
+
+	values.emplace_back(from_prop<std::string>(StructType::GetChildType(t, 0), recipient_prop_bag, PR_DISPLAY_NAME_A));
+	values.emplace_back(from_prop<std::string>(StructType::GetChildType(t, 1), recipient_prop_bag, PR_ACCOUNT_A));
+	values.emplace_back(from_prop<std::string>(StructType::GetChildType(t, 2), recipient_prop_bag, PR_EMAIL_ADDRESS_A));
+	values.emplace_back(from_prop<std::string>(StructType::GetChildType(t, 3), recipient_prop_bag, PR_ADDRTYPE_A));
+	values.emplace_back(from_prop<int32_t>(StructType::GetChildType(t, 4), recipient_prop_bag, PR_RECIPIENT_TYPE));
+	values.emplace_back(from_prop<int32_t>(StructType::GetChildType(t, 5), recipient_prop_bag, PR_RECIPIENT_TYPE));
+
+	return Value::STRUCT(t, values);
 }
 
 template <>
@@ -141,22 +184,12 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 			auto recipient = *it;
 			auto recipient_prop_bag = recipient.get_property_row();
 
-			vector<Value> values;
-
-			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 0),
-			                                           recipient_prop_bag, PR_DISPLAY_NAME_A));
-			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 1),
-			                                           recipient_prop_bag, PR_ACCOUNT_A));
-			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 2),
-			                                           recipient_prop_bag, PR_EMAIL_ADDRESS_A));
-			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 3),
-			                                           recipient_prop_bag, PR_ADDRTYPE_A));
-			values.emplace_back(from_prop<int32_t>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 4),
-			                                       recipient_prop_bag, PR_RECIPIENT_TYPE));
-			values.emplace_back(from_prop<int32_t>(StructType::GetChildType(schema::RECIPIENT_SCHEMA, 5),
-			                                       recipient_prop_bag, PR_RECIPIENT_TYPE));
-
-			recipients.emplace_back(Value::STRUCT(schema::RECIPIENT_SCHEMA, values));
+			try {
+				recipients.emplace_back(into_struct(schema::RECIPIENT_SCHEMA, *it));
+			} catch (std::exception &e) {
+				DUCKDB_LOG_ERROR(local_state.ec, "Unable to serialize recipient struct: %s", e.what());
+				recipients.emplace_back(Value(nullptr));
+			}
 		}
 		output.SetValue(column_index, row_number, Value::LIST(schema::RECIPIENT_SCHEMA, recipients));
 		break;
@@ -165,30 +198,13 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 		vector<Value> attachments;
 		for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
 			auto attachment = *it;
-			auto attachment_prop_bag = attachment.get_property_bag();
 
-			vector<Value> values;
-			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 0),
-			                                           attachment_prop_bag, PR_ATTACH_CONTENT_ID));
-			values.emplace_back(from_prop<int32_t>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 1),
-			                                       attachment_prop_bag, PR_ATTACH_METHOD));
-			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 2),
-			                                           attachment_prop_bag, PR_ATTACH_FILENAME_A));
-			values.emplace_back(from_prop<std::string>(StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 3),
-			                                           attachment_prop_bag, PR_ATTACH_MIME_TAG_A));
-			values.emplace_back(Value::UBIGINT(attachment.content_size()));
-
-			// when ATTACH_BY_VALUE
-			// TODO: support the other attach methods
-			// https://stackoverflow.com/a/4693174
-			values.emplace_back(Value::BOOLEAN(attachment.is_message()));
-
-			if (attachment.content_size() > 0) {
-				values.emplace_back(from_prop<std::vector<pstsdk::byte>>(
-				    StructType::GetChildType(schema::ATTACHMENT_SCHEMA, 6), attachment_prop_bag, PR_ATTACH_DATA_BIN));
+			try {
+				attachments.emplace_back(into_struct(schema::ATTACHMENT_SCHEMA, *it));
+			} catch (std::exception &e) {
+				DUCKDB_LOG_ERROR(local_state.ec, "Unable to serialize attachment struct: %s", e.what());
+				attachments.emplace_back(Value(nullptr));
 			}
-
-			attachments.emplace_back(Value::STRUCT(schema::ATTACHMENT_SCHEMA, values));
 		}
 
 		output.SetValue(column_index, row_number, Value::LIST(schema::ATTACHMENT_SCHEMA, attachments));

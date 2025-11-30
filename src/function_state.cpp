@@ -19,8 +19,7 @@ using namespace pstsdk;
 // PSTReadGlobalTableFunctionState
 PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(const PSTReadTableFunctionData &bind_data,
                                                                  vector<column_t> column_ids)
-    : mode(bind_data.mode), column_ids(std::move(column_ids)), total_files(bind_data.files.size()),
-      output_schema(bind_data.output_schema) {
+    : bind_data(bind_data), column_ids(std::move(column_ids)), output_schema(bind_data.output_schema) {
 	for (auto &file : bind_data.files) {
 		files->push(file);
 	}
@@ -31,7 +30,7 @@ PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(const PSTReadTa
 
 	// This isn't necessary, however it allows all local spoolers to begin
 	// working immediately instead of blocking to hydrate the message IDs list
-	if (mode == PSTReadFunctionMode::Message) {
+	if (bind_data.mode == PSTReadFunctionMode::Message) {
 		auto bound = 0;
 		while (bound < 1) {
 			bound = this->bind_message_ids();
@@ -64,7 +63,6 @@ int64_t PSTReadGlobalTableFunctionState::bind_message_ids() {
 		++msg_count;
 	}
 
-	total_messages = msgs.size();
 	sync_message_ids->emplace(std::move(msgs));
 	current_file.emplace(std::move(file));
 
@@ -72,29 +70,27 @@ int64_t PSTReadGlobalTableFunctionState::bind_message_ids() {
 }
 
 double PSTReadGlobalTableFunctionState::progress() const {
-	if (total_files < 1)
-		return 100.0;
-
-	double remain = files->size();
-	if (current_file.has_value())
-		++remain;
-
-	return (100.0 * (1.0 - (remain / total_files)));
+	switch (bind_data.mode) {
+	case PSTReadFunctionMode::Folder: {
+		return (100.0 * folders_processed) / std::max<idx_t>(bind_data.folder_count, 1);
+	}
+	case PSTReadFunctionMode::Message: {
+		return (100.0 * messages_processed) / std::max<idx_t>(bind_data.message_count, 1);
+	}
+	default:
+		return 0.0;
+	}
 }
 
 idx_t PSTReadGlobalTableFunctionState::MaxThreads() const {
 	idx_t threads = 0;
 
-	switch (this->mode) {
+	switch (bind_data.mode) {
 	case PSTReadFunctionMode::Folder:
 		threads = this->files->size();
 		break;
 	case PSTReadFunctionMode::Message:
-		if (this->current_message_ids.value().has_value()) {
-			threads = (this->current_message_ids.value()->size() / DEFAULT_STANDARD_VECTOR_SIZE);
-		} else if (!this->folder_ids.empty()) {
-			threads = this->folder_ids.front().size();
-		}
+		threads = this->bind_data.message_count / DEFAULT_STANDARD_VECTOR_SIZE;
 		break;
 	default:
 		break;
@@ -110,6 +106,7 @@ std::optional<OpenFileInfo> PSTReadGlobalTableFunctionState::take_file() {
 
 	auto file = sync_files->front();
 	sync_files->pop();
+	++this->messages_processed;
 	return std::move(file);
 };
 
@@ -128,8 +125,9 @@ std::optional<std::pair<OpenFileInfo, node_id>> PSTReadGlobalTableFunctionState:
 	auto file = sync_files->front();
 	auto folder_id = folder_ids.front().front();
 	folder_ids.front().pop();
+	++this->folders_processed;
 
-	if (folder_ids.front().empty() || this->mode == PSTReadFunctionMode::Folder) {
+	if (folder_ids.front().empty() || bind_data.mode == PSTReadFunctionMode::Folder) {
 		sync_files->pop();
 		if (!folder_ids.empty())
 			folder_ids.pop();
@@ -161,6 +159,8 @@ std::optional<std::pair<OpenFileInfo, vector<node_id>>> PSTReadGlobalTableFuncti
 		batch.push_back(messages->value().front());
 		messages->value().pop();
 	}
+
+	this->messages_processed += batch.size();
 
 	return std::make_pair(*current_file, std::move(batch));
 }
