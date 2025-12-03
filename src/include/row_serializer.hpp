@@ -7,7 +7,6 @@
 #include "pstsdk/ltp/object.h"
 #include "pstsdk/util/primitives.h"
 
-// Everything that we want to emit as a row or column
 namespace intellekt::duckpst::row_serializer {
 
 template <typename T>
@@ -22,5 +21,7 @@ void into_row(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk
 
 template <typename Item>
 duckdb::Value into_struct(const LogicalType &t, Item item);
+
+void set_common_struct_fields(vector<Value> &values, pstsdk::const_property_object &bag);
 
 } // namespace intellekt::duckpst::row_serializer
