@@ -1,5 +1,6 @@
 #include "table_function.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/vector_size.hpp"
 #include "duckdb/function/partition_stats.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/logging/logger.hpp"
@@ -21,23 +22,17 @@ namespace intellekt::duckpst {
 using namespace duckdb;
 using namespace pstsdk;
 
+PSTInputPartition::PSTInputPartition(const OpenFileInfo file, const PSTReadFunctionMode mode,
+                                     const vector<node_id> &&nodes, const PartitionStatistics &&stats)
+    : file(file), mode(mode), nodes(nodes), stats(stats) {
+}
+
 // Instantiates PST read table function data:
 // - Bind schema based on called table function name
 // - Glob over provided path and enumerate PSTs + their folder IDs
 PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientContext &ctx,
                                                    const PSTReadFunctionMode mode)
-    : mode(mode), output_schema(*[&]() {
-	      switch (mode) {
-	      case PSTReadFunctionMode::Folder:
-		      return &schema::FOLDER_SCHEMA;
-		      break;
-	      case PSTReadFunctionMode::Message:
-		      return &schema::MESSAGE_SCHEMA;
-		      break;
-	      default:
-		      throw InvalidInputException("Unknown read function mode. Please report this bug on GitHub.");
-	      }
-      }()) {
+    : mode(mode) {
 	auto &fs = FileSystem::GetFileSystem(ctx);
 
 	if (FileSystem::HasGlob(path)) {
@@ -46,50 +41,68 @@ PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientCo
 		files.push_back(OpenFileInfo(path));
 	}
 
-	idx_t row_count = 0;
+	plan_input_partitions(ctx);
+}
+
+void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalType> &return_types,
+                                                                 vector<string> &names) {
+	auto schema = output_schema(mode);
+	for (idx_t i = 0; i < StructType::GetChildCount(schema); ++i) {
+		names.emplace_back(StructType::GetChildName(schema, i));
+		return_types.emplace_back(StructType::GetChildType(schema, i));
+	}
+}
+
+void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
+	auto total_rows = 0;
 
 	for (auto &file : files) {
-		vector<node_id> folders;
-		auto stats = PartitionStatistics();
-
-		stats.row_start = row_count;
-		stats.count = 0;
-		stats.count_type = CountType::COUNT_EXACT;
-
-		idx_t folder_count = 0;
-
 		try {
 			auto pst = pstsdk::pst(utils::to_wstring(file.path));
+			vector<node_id> nodes;
 
-			for (auto it = pst.folder_begin(); it != pst.folder_end(); ++it) {
-				folders.emplace_back(it->get_id());
-				++folder_count;
-
-				if (mode == PSTReadFunctionMode::Message) {
-					row_count += it->get_message_count();
-					stats.count += it->get_message_count();
+			// TODO
+			switch (mode) {
+			case PSTReadFunctionMode::Folder:
+				for (pstsdk::pst::folder_filter_iterator it = pst.folder_node_begin(); it != pst.folder_node_end();
+				     ++it) {
+					nodes.emplace_back(it->id);
 				}
+				break;
+			case PSTReadFunctionMode::Message:
+				for (pstsdk::pst::message_filter_iterator it = pst.message_node_begin(); it != pst.message_node_end();
+				     ++it) {
+					nodes.emplace_back(it->id);
+				}
+				break;
+			default:
+				break;
 			}
 
-			if (mode == PSTReadFunctionMode::Folder) {
-				row_count += folder_count;
-				stats.count = folder_count;
+			while (!nodes.empty()) {
+				vector<node_id> partition_nodes;
+				PartitionStatistics stats;
+
+				stats.row_start = total_rows;
+				stats.count_type = CountType::COUNT_EXACT;
+
+				for (idx_t i = 0; i < DEFAULT_STANDARD_VECTOR_SIZE; ++i) {
+					if (i >= nodes.size())
+						break;
+					partition_nodes.emplace_back(nodes.back());
+					nodes.pop_back();
+				}
+
+				stats.count = partition_nodes.size();
+				total_rows += partition_nodes.size();
+
+				partitions.emplace_back(
+				    std::move(PSTInputPartition(file, mode, std::move(partition_nodes), std::move(stats))));
 			}
 
 		} catch (const std::exception &e) {
 			DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", file.path, e.what());
 		}
-
-		this->partitions.emplace_back(std::move(stats));
-		this->pst_folders.push_back(std::move(folders));
-	}
-}
-
-void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalType> &return_types,
-                                                                 vector<string> &names) {
-	for (idx_t i = 0; i < StructType::GetChildCount(output_schema); ++i) {
-		names.emplace_back(StructType::GetChildName(output_schema, i));
-		return_types.emplace_back(StructType::GetChildType(output_schema, i));
 	}
 }
 
@@ -112,10 +125,10 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 
 	switch (bind_data.mode) {
 	case PSTReadFunctionMode::Folder:
-		local_state = make_uniq<PSTConcreteIteratorState<pst::folder_iterator, folder>>(global_state, ec);
+		local_state = make_uniq<PSTConcreteIteratorState<folder>>(global_state, ec);
 		break;
 	case PSTReadFunctionMode::Message:
-		local_state = make_uniq<PSTConcreteIteratorState<vector<node_id>::iterator, message>>(global_state, ec);
+		local_state = make_uniq<PSTConcreteIteratorState<message>>(global_state, ec);
 		break;
 	default:
 		break;
@@ -143,7 +156,7 @@ unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const Function
 	idx_t estimated_cardinality = 0;
 
 	for (auto &partition : pst_data.partitions) {
-		estimated_cardinality += partition.count;
+		estimated_cardinality += partition.stats.count;
 	}
 
 	auto stats = make_uniq<NodeStatistics>(estimated_cardinality);
@@ -154,11 +167,17 @@ vector<PartitionStatistics> PSTPartitionStats(ClientContext &ctx, GetPartitionSt
 	if (!input.bind_data)
 		return vector<PartitionStatistics>();
 	auto pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-	return pst_data.partitions;
+
+	vector<PartitionStatistics> stats;
+	for (auto &part : pst_data.partitions) {
+		stats.push_back(part.stats);
+	}
+
+	return std::move(stats);
 }
 
 // TODO:
-TablePartitionInfo PSTPartitionInfo(ClientContext *ctx, TableFunctionPartitionInput &input) {
+TablePartitionInfo PSTPartitionInfo(ClientContext &ctx, TableFunctionPartitionInput &input) {
 	return TablePartitionInfo::NOT_PARTITIONED;
 }
 
@@ -167,17 +186,7 @@ double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
 	auto &pst_state = global_state->Cast<PSTReadGlobalTableFunctionState>();
 	auto &pst_data = bind_data->Cast<PSTReadTableFunctionData>();
 	auto cardinality = PSTReadCardinality(context, bind_data)->estimated_cardinality;
-
-	switch (pst_data.mode) {
-	case PSTReadFunctionMode::Folder: {
-		return (100.0 * pst_state.folders_processed) / std::max<idx_t>(cardinality, 1);
-	}
-	case PSTReadFunctionMode::Message: {
-		return (100.0 * pst_state.messages_processed) / std::max<idx_t>(cardinality, 1);
-	}
-	default:
-		return 0.0;
-	}
+	return (100.0 * pst_state.nodes_processed) / cardinality;
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output) {

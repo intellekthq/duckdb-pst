@@ -21,6 +21,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 	proto.table_scan_progress = duckpst::PSTReadProgress;
 	proto.projection_pushdown = true;
 	proto.get_partition_stats = duckpst::PSTPartitionStats;
+	proto.get_partition_info = duckpst::PSTPartitionInfo;
 
 	for (auto pair : duckpst::FUNCTIONS) {
 		TableFunction concrete = proto;

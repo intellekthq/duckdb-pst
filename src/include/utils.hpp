@@ -16,5 +16,4 @@ inline std::string to_utf8(std::wstring s) {
 	std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
 	return converter.to_bytes({s.begin(), s.end()});
 }
-
 } // namespace intellekt::duckpst::utils
