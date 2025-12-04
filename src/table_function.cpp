@@ -1,8 +1,8 @@
 #include "table_function.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/table_function.hpp"
+#include "duckdb/logging/logger.hpp"
 #include "duckdb/main/client_data.hpp"
-#include "fmt/printf.h"
 #include "function_state.hpp"
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/common/helper.hpp"
@@ -12,7 +12,7 @@
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/storage/statistics/node_statistics.hpp"
 
-#include "pst_schema.hpp"
+#include "schema.hpp"
 #include "pstsdk/pst/folder.h"
 #include "utils.hpp"
 
@@ -48,18 +48,21 @@ PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientCo
 	for (auto &file : files) {
 		vector<node_id> folders;
 
-		// TODO error handling, for now this works to tell you if something is wrong with the file
 		try {
 			auto pst = pstsdk::pst(utils::to_wstring(file.path));
 			for (auto it = pst.folder_begin(); it != pst.folder_end(); ++it) {
+				this->message_count += it->get_message_count();
 				folders.emplace_back(it->get_id());
 			}
-		} catch (...) {
-			std::cout << duckdb_fmt::sprintf("Unable to read PST file: %s", file.path) << std::endl;
+		} catch (const std::exception &e) {
+			DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", file.path, e.what());
 		}
 
+		this->folder_count += folders.size();
 		this->pst_folders.push_back(std::move(folders));
 	}
+
+	this->file_count += files.size();
 }
 
 void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalType> &return_types,
@@ -89,10 +92,10 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 
 	switch (bind_data.mode) {
 	case PSTReadFunctionMode::Folder:
-		local_state = make_uniq<PSTConcreteIteratorState<pst::folder_iterator, folder>>(global_state);
+		local_state = make_uniq<PSTConcreteIteratorState<pst::folder_iterator, folder>>(global_state, ec);
 		break;
 	case PSTReadFunctionMode::Message:
-		local_state = make_uniq<PSTConcreteIteratorState<vector<node_id>::iterator, message>>(global_state);
+		local_state = make_uniq<PSTConcreteIteratorState<vector<node_id>::iterator, message>>(global_state, ec);
 		break;
 	default:
 		break;
@@ -119,28 +122,17 @@ unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const Function
 	auto pst_data = data->Cast<PSTReadTableFunctionData>();
 	idx_t estimated_cardinality = 0;
 
-	// TODO: need to do a pass of "how many times do we open the file"
-	for (auto p : boost::combine(pst_data.files, pst_data.pst_folders)) {
-		auto &[file, folders] = p;
-
-		switch (pst_data.mode) {
-		case PSTReadFunctionMode::Folder: {
-			estimated_cardinality += folders.size();
-			break;
-		}
-		case PSTReadFunctionMode::Message: {
-			auto pst = pstsdk::pst(utils::to_wstring(file.path));
-
-			for (auto folder_id : folders) {
-				auto folder = pst.open_folder(folder_id);
-				estimated_cardinality += folder.get_message_count();
-			}
-
-			break;
-		}
-		default:
-			break;
-		}
+	switch (pst_data.mode) {
+	case PSTReadFunctionMode::Folder: {
+		estimated_cardinality += pst_data.folder_count;
+		break;
+	}
+	case PSTReadFunctionMode::Message: {
+		estimated_cardinality += pst_data.message_count;
+		break;
+	}
+	default:
+		break;
 	}
 
 	auto stats = make_uniq<NodeStatistics>(estimated_cardinality);
