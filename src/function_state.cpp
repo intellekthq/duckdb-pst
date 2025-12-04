@@ -69,28 +69,19 @@ int64_t PSTReadGlobalTableFunctionState::bind_message_ids() {
 	return msg_count;
 }
 
-double PSTReadGlobalTableFunctionState::progress() const {
-	switch (bind_data.mode) {
-	case PSTReadFunctionMode::Folder: {
-		return (100.0 * folders_processed) / std::max<idx_t>(bind_data.folder_count, 1);
-	}
-	case PSTReadFunctionMode::Message: {
-		return (100.0 * messages_processed) / std::max<idx_t>(bind_data.message_count, 1);
-	}
-	default:
-		return 0.0;
-	}
-}
-
 idx_t PSTReadGlobalTableFunctionState::MaxThreads() const {
 	idx_t threads = 0;
+	idx_t total = 0;
 
 	switch (bind_data.mode) {
 	case PSTReadFunctionMode::Folder:
 		threads = this->files->size();
 		break;
 	case PSTReadFunctionMode::Message:
-		threads = this->bind_data.message_count / DEFAULT_STANDARD_VECTOR_SIZE;
+		for (auto &part : bind_data.partitions) {
+			total += part.count;
+		}
+		threads = total / DEFAULT_STANDARD_VECTOR_SIZE;
 		break;
 	default:
 		break;

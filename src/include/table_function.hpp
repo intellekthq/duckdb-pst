@@ -4,6 +4,7 @@
 #include "duckdb/common/types.hpp"
 #include "duckdb/execution/execution_context.hpp"
 #include "duckdb/function/function.hpp"
+#include "duckdb/function/partition_stats.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/common/types/data_chunk.hpp"
 #include "duckdb/main/client_context.hpp"
@@ -32,9 +33,7 @@ public:
 	const PSTReadFunctionMode mode;
 	const LogicalType &output_schema;
 
-	idx_t file_count;
-	idx_t folder_count;
-	idx_t message_count;
+	vector<PartitionStatistics> partitions;
 
 	// Make a `TableFunctionData` from a path, context, and schema
 	PSTReadTableFunctionData(const string &&path, ClientContext &ctx, const PSTReadFunctionMode mode);
@@ -52,6 +51,10 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
                                                      GlobalTableFunctionState *global);
 
 unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const FunctionData *data);
+
+vector<PartitionStatistics> PSTPartitionStats(ClientContext &ctx, GetPartitionStatsInput &input);
+
+TablePartitionInfo PSTPartitionInfo(ClientContext *ctx, TableFunctionPartitionInput &input);
 
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
                        const GlobalTableFunctionState *global_state);

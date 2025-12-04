@@ -40,19 +40,18 @@ class PSTReadGlobalTableFunctionState : public GlobalTableFunctionState {
 
 	int64_t bind_message_ids();
 
-	idx_t files_processed;
-	idx_t folders_processed;
-	idx_t messages_processed;
-
 public:
 	PSTReadGlobalTableFunctionState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids);
 	const LogicalType &output_schema;
 	const PSTReadTableFunctionData &bind_data;
 
+	idx_t files_processed;
+	idx_t folders_processed;
+	idx_t messages_processed;
+
 	vector<column_t> column_ids;
 
 	idx_t MaxThreads() const override;
-	double progress() const;
 
 	std::optional<OpenFileInfo> take_file();
 	std::optional<std::pair<OpenFileInfo, node_id>> take_folder();
