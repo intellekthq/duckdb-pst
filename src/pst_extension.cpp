@@ -22,6 +22,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 	proto.projection_pushdown = true;
 	proto.get_partition_stats = duckpst::PSTPartitionStats;
 	proto.get_partition_info = duckpst::PSTPartitionInfo;
+	proto.dynamic_to_string = duckpst::PSTDynamicToString;
 
 	for (auto pair : duckpst::FUNCTIONS) {
 		TableFunction concrete = proto;

@@ -1,4 +1,5 @@
 #include "row_serializer.hpp"
+#include "function_state.hpp"
 #include "pstsdk/pst/message.h"
 #include "schema.hpp"
 #include "duckdb/common/types.hpp"
@@ -359,7 +360,7 @@ void into_row(PSTReadLocalState &local_state, DataChunk &output, Item &item, idx
 	}
 }
 
-template void into_row<pstsdk::folder>(PSTIteratorLocalTableFunctionState &, DataChunk &, pstsdk::folder &, idx_t);
-template void into_row<pstsdk::message>(PSTIteratorLocalTableFunctionState &, DataChunk &, pstsdk::message &, idx_t);
+template void into_row<pstsdk::folder>(PSTReadLocalState &, DataChunk &, pstsdk::folder &, idx_t);
+template void into_row<pstsdk::message>(PSTReadLocalState &, DataChunk &, pstsdk::message &, idx_t);
 
 } // namespace intellekt::duckpst::row_serializer

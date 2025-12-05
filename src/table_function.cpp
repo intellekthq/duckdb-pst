@@ -1,5 +1,6 @@
 #include "table_function.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/vector_size.hpp"
 #include "duckdb/function/partition_stats.hpp"
 #include "duckdb/function/table_function.hpp"
@@ -26,9 +27,10 @@ PSTInputPartition::PSTInputPartition(const OpenFileInfo file, const PSTReadFunct
     : file(file), mode(mode), nodes(nodes), stats(stats) {
 }
 
-PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientContext &ctx,
-                                                   const PSTReadFunctionMode mode)
-    : mode(mode) {
+PSTReadTableFunctionData::PSTReadTableFunctionData(ClientContext &ctx, const string &&path,
+                                                   const PSTReadFunctionMode mode,
+                                                   duckdb::named_parameter_map_t &named_parameters)
+    : mode(mode), named_parameters(named_parameters) {
 	auto &fs = FileSystem::GetFileSystem(ctx);
 
 	if (FileSystem::HasGlob(path)) {
@@ -38,6 +40,14 @@ PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientCo
 	}
 
 	plan_input_partitions(ctx);
+}
+
+const idx_t PSTReadTableFunctionData::partition_size() const {
+	auto maybe_partition_size = named_parameters.find("partition_size");
+	if (maybe_partition_size == named_parameters.end())
+		return DEFAULT_PARTITION_SIZE;
+	auto &[_, v] = *maybe_partition_size;
+	return std::max<idx_t>(v.GetValue<idx_t>(), 1);
 }
 
 void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalType> &return_types,
@@ -82,7 +92,7 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 				stats.row_start = total_rows;
 				stats.count_type = CountType::COUNT_EXACT;
 
-				for (idx_t i = 0; i < DEFAULT_STANDARD_VECTOR_SIZE; ++i) {
+				for (idx_t i = 0; i < this->partition_size(); ++i) {
 					if (i >= nodes.size())
 						break;
 					partition_nodes.emplace_back(nodes.back());
@@ -104,7 +114,6 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 	DUCKDB_LOG_INFO(ctx, "Planned %d partitions (%d files)", partitions.size(), files.size());
 }
 
-// Load enumerated function state data into queues for spooler state
 unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
 
@@ -113,7 +122,6 @@ unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, Table
 	return global_state;
 }
 
-// Local function states can spool different files, or concurrently spool different folders from the same file
 unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, TableFunctionInitInput &input,
                                                      GlobalTableFunctionState *global) {
 	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
@@ -140,8 +148,8 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 unique_ptr<FunctionData> PSTReadBind(ClientContext &ctx, TableFunctionBindInput &input,
                                      vector<LogicalType> &return_types, vector<string> &names) {
 	auto path = input.inputs[0].GetValue<string>();
-	unique_ptr<PSTReadTableFunctionData> function_data =
-	    make_uniq<PSTReadTableFunctionData>(std::move(path), ctx, FUNCTIONS.at(input.table_function.name));
+	unique_ptr<PSTReadTableFunctionData> function_data = make_uniq<PSTReadTableFunctionData>(
+	    ctx, std::move(path), FUNCTIONS.at(input.table_function.name), input.named_parameters);
 	function_data->bind_table_function_output_schema(return_types, names);
 	return std::move(function_data);
 }
@@ -182,6 +190,18 @@ double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
 	auto &pst_data = bind_data->Cast<PSTReadTableFunctionData>();
 	auto cardinality = PSTReadCardinality(context, bind_data)->estimated_cardinality;
 	return (100.0 * pst_state.nodes_processed) / std::max<idx_t>(cardinality, 1);
+}
+
+InsertionOrderPreservingMap<string> PSTDynamicToString(duckdb::TableFunctionDynamicToStringInput &input) {
+	auto &pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
+
+	InsertionOrderPreservingMap<string> meta;
+
+	meta.insert(make_pair("Files read", std::to_string(pst_data.files.size())));
+	meta.insert(make_pair("Partitions read", std::to_string(pst_data.partitions.size())));
+	meta.insert(make_pair("Partition size", std::to_string(pst_data.partition_size())));
+
+	return std::move(meta);
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output) {

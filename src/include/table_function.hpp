@@ -1,7 +1,9 @@
 #pragma once
 
+#include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/open_file_info.hpp"
 #include "duckdb/common/types.hpp"
+#include "duckdb/common/vector_size.hpp"
 #include "duckdb/execution/execution_context.hpp"
 #include "duckdb/function/function.hpp"
 #include "duckdb/function/partition_stats.hpp"
@@ -18,6 +20,8 @@
 namespace intellekt::duckpst {
 using namespace duckdb;
 using namespace pstsdk;
+
+static constexpr idx_t DEFAULT_PARTITION_SIZE = DEFAULT_STANDARD_VECTOR_SIZE * 2;
 
 enum PSTReadFunctionMode { Folder, Message, NUM_SHAPES };
 
@@ -53,6 +57,7 @@ struct PSTInputPartition {
 struct PSTReadTableFunctionData : public TableFunctionData {
 	vector<OpenFileInfo> files;
 	vector<PSTInputPartition> partitions;
+	duckdb::named_parameter_map_t named_parameters;
 
 public:
 	const PSTReadFunctionMode mode;
@@ -64,7 +69,10 @@ public:
 	 * @param ctx ClientContext
 	 * @param mode Function read mode
 	 */
-	PSTReadTableFunctionData(const string &&path, ClientContext &ctx, const PSTReadFunctionMode mode);
+	PSTReadTableFunctionData(ClientContext &ctx, const string &&path, const PSTReadFunctionMode mode,
+	                         duckdb::named_parameter_map_t &named_parameters);
+
+	const idx_t partition_size() const;
 
 	/**
 	 * @brief Bind table function output schema based on read mode
@@ -98,6 +106,8 @@ TablePartitionInfo PSTPartitionInfo(ClientContext &ctx, TableFunctionPartitionIn
 
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
                        const GlobalTableFunctionState *global_state);
+
+InsertionOrderPreservingMap<string> PSTDynamicToString(duckdb::TableFunctionDynamicToStringInput &);
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output);
 } // namespace intellekt::duckpst
