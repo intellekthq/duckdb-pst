@@ -15,8 +15,7 @@ using namespace duckdb;
 using namespace pstsdk;
 
 // PSTReadGlobalTableFunctionState
-PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(const PSTReadTableFunctionData &bind_data,
-                                                                 vector<column_t> column_ids)
+PSTReadGlobalState::PSTReadGlobalState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids)
     : bind_data(bind_data), column_ids(std::move(column_ids)) {
 	auto sync_partitions = partitions.synchronize();
 	for (auto &part : bind_data.partitions) {
@@ -24,7 +23,7 @@ PSTReadGlobalTableFunctionState::PSTReadGlobalTableFunctionState(const PSTReadTa
 	}
 }
 
-std::optional<PSTInputPartition> PSTReadGlobalTableFunctionState::take_partition() {
+std::optional<PSTInputPartition> PSTReadGlobalState::take_partition() {
 	auto sync_partitions = partitions.synchronize();
 	if (sync_partitions->empty())
 		return {};
@@ -38,18 +37,17 @@ std::optional<PSTInputPartition> PSTReadGlobalTableFunctionState::take_partition
 	return std::move(part);
 }
 
-idx_t PSTReadGlobalTableFunctionState::MaxThreads() const {
+idx_t PSTReadGlobalState::MaxThreads() const {
 	return std::max<idx_t>(partitions->size(), 1);
 }
 
 // PSTIteratorLocalTableFunctionState
-PSTIteratorLocalTableFunctionState::PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state,
-                                                                       ExecutionContext &ec)
+PSTReadLocalState::PSTReadLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec)
     : global_state(global_state), ec(ec) {
 	bind_partition();
 }
 
-bool PSTIteratorLocalTableFunctionState::bind_partition() {
+bool PSTReadLocalState::bind_partition() {
 	auto next_partition = global_state.take_partition();
 	if (!next_partition.has_value())
 		return false;
@@ -60,19 +58,18 @@ bool PSTIteratorLocalTableFunctionState::bind_partition() {
 	return true;
 }
 
-const vector<column_t> &PSTIteratorLocalTableFunctionState::column_ids() {
+const vector<column_t> &PSTReadLocalState::column_ids() {
 	return global_state.column_ids;
 }
 
-const LogicalType &PSTIteratorLocalTableFunctionState::output_schema() {
+const LogicalType &PSTReadLocalState::output_schema() {
 	return duckpst::output_schema(global_state.bind_data.mode);
 }
 
 // PSTConcreteIteratorState
 template <typename t>
-PSTConcreteIteratorState<t>::PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state,
-                                                      ExecutionContext &ec)
-    : PSTIteratorLocalTableFunctionState(global_state, ec) {
+PSTReadRowSpoolerState<t>::PSTReadRowSpoolerState(PSTReadGlobalState &global_state, ExecutionContext &ec)
+    : PSTReadLocalState(global_state, ec) {
 	if (partition.has_value()) {
 		current.emplace(partition->nodes.begin());
 		end.emplace(partition->nodes.end());
@@ -80,12 +77,12 @@ PSTConcreteIteratorState<t>::PSTConcreteIteratorState(PSTReadGlobalTableFunction
 }
 
 template <typename t>
-const bool PSTConcreteIteratorState<t>::finished() {
+const bool PSTReadRowSpoolerState<t>::finished() {
 	return (!current) || (current == end);
 }
 
 template <typename t>
-std::optional<t> PSTConcreteIteratorState<t>::next() {
+std::optional<t> PSTReadRowSpoolerState<t>::next() {
 	// If the current state is finished, keep going until we can keep binding
 	while (finished() && bind_next()) {
 	}
@@ -100,19 +97,19 @@ std::optional<t> PSTConcreteIteratorState<t>::next() {
 }
 
 template <>
-message PSTConcreteIteratorState<message>::current_item() {
+message PSTReadRowSpoolerState<message>::current_item() {
 	auto msg_id = **current;
 	return pst->open_message(msg_id);
 }
 
 template <>
-folder PSTConcreteIteratorState<folder>::current_item() {
+folder PSTReadRowSpoolerState<folder>::current_item() {
 	auto msg_id = **current;
 	return pst->open_folder(msg_id);
 }
 
 template <typename t>
-bool PSTConcreteIteratorState<t>::bind_next() {
+bool PSTReadRowSpoolerState<t>::bind_next() {
 	while (finished()) {
 		if (!bind_partition())
 			return false;
@@ -124,7 +121,7 @@ bool PSTConcreteIteratorState<t>::bind_next() {
 }
 
 template <typename t>
-idx_t PSTConcreteIteratorState<t>::emit_rows(DataChunk &output) {
+idx_t PSTReadRowSpoolerState<t>::emit_rows(DataChunk &output) {
 	idx_t rows = 0;
 
 	for (idx_t i = 0; i < STANDARD_VECTOR_SIZE; ++i) {
@@ -142,7 +139,7 @@ idx_t PSTConcreteIteratorState<t>::emit_rows(DataChunk &output) {
 	return rows;
 }
 
-template class PSTConcreteIteratorState<folder>;
-template class PSTConcreteIteratorState<message>;
+template class PSTReadRowSpoolerState<folder>;
+template class PSTReadRowSpoolerState<message>;
 
 } // namespace intellekt::duckpst

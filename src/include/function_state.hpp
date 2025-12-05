@@ -13,11 +13,15 @@ namespace intellekt::duckpst {
 using namespace duckdb;
 using namespace pstsdk;
 
-class PSTReadGlobalTableFunctionState : public GlobalTableFunctionState {
+/**
+ * The global PST read state is a queue of input partitions, where the progress
+ * of the read is determined by the number of NDB nodes spooled.
+ */
+class PSTReadGlobalState : public GlobalTableFunctionState {
 	boost::synchronized_value<queue<PSTInputPartition>> partitions;
 
 public:
-	PSTReadGlobalTableFunctionState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids);
+	PSTReadGlobalState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids);
 	const PSTReadTableFunctionData &bind_data;
 
 	std::optional<PSTInputPartition> take_partition();
@@ -27,18 +31,35 @@ public:
 	idx_t MaxThreads() const override;
 };
 
-class PSTIteratorLocalTableFunctionState : public LocalTableFunctionState {
+/**
+ * The local (per-thread) read state spools node_ids out of a partition,
+ * asking for a new one after all nodes have been output.
+ */
+class PSTReadLocalState : public LocalTableFunctionState {
 protected:
-	PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state, ExecutionContext &ec);
+	PSTReadLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec);
+
+	/**
+	 * @brief Dequeue a partition from global state
+	 *
+	 * @return true A partition was received
+	 * @return false No partitions are available
+	 */
 	bool bind_partition();
 
 public:
 	ExecutionContext &ec;
-	PSTReadGlobalTableFunctionState &global_state;
+	PSTReadGlobalState &global_state;
 
 	std::optional<pstsdk::pst> pst;
 	std::optional<PSTInputPartition> partition;
 
+	/**
+	 * @brief Spools rows into DataChunk
+	 *
+	 * @param output Current data chunk
+	 * @return idx_t Number of rows
+	 */
 	virtual idx_t emit_rows(DataChunk &output) {
 		return 0;
 	}
@@ -49,8 +70,13 @@ public:
 
 typedef vector<node_id>::iterator node_id_iterator;
 
+/**
+ * Concrete local state implementation for a specific pstsdk type
+ *
+ * @tparam t pstsdk item type
+ */
 template <typename t>
-class PSTConcreteIteratorState : public PSTIteratorLocalTableFunctionState {
+class PSTReadRowSpoolerState : public PSTReadLocalState {
 	t current_item();
 
 protected:
@@ -60,11 +86,29 @@ protected:
 	bool bind_next();
 
 public:
-	PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state, ExecutionContext &ec);
+	PSTReadRowSpoolerState(PSTReadGlobalState &global_state, ExecutionContext &ec);
 
+	/**
+	 * @brief Is this partition done?
+	 *
+	 * @return true
+	 * @return false
+	 */
 	const bool finished();
 
+	/**
+	 * @brief Get the next item and move the iterator
+	 *
+	 * @return std::optional<t>
+	 */
 	std::optional<t> next();
+
+	/**
+	 * @brief Concrete row spooler for `t`
+	 *
+	 * @param output
+	 * @return idx_t
+	 */
 	idx_t emit_rows(DataChunk &output) override;
 };
 

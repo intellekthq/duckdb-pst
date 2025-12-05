@@ -57,13 +57,28 @@ struct PSTReadTableFunctionData : public TableFunctionData {
 public:
 	const PSTReadFunctionMode mode;
 
-	// Make a `TableFunctionData` from a path, context, and schema
+	/**
+	 * @brief Construct a new PSTReadTableFunctionData object
+	 *
+	 * @param path A globbable path to use with DuckDB FileSystem
+	 * @param ctx ClientContext
+	 * @param mode Function read mode
+	 */
 	PSTReadTableFunctionData(const string &&path, ClientContext &ctx, const PSTReadFunctionMode mode);
 
-	// Bind the column names and return types from the input schema
+	/**
+	 * @brief Bind table function output schema based on read mode
+	 *
+	 * @param return_types Positionally ordered return types
+	 * @param names Positionally ordered column names
+	 */
 	void bind_table_function_output_schema(vector<LogicalType> &return_types, vector<string> &names);
 
-	// Walk the PST files and populate the partition queue
+	/**
+	 * @brief Mount PSTs and bucket NDB nodes against the default DuckDB vector size
+	 *
+	 * @param ctx
+	 */
 	void plan_input_partitions(ClientContext &ctx);
 };
 

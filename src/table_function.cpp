@@ -14,7 +14,6 @@
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/storage/statistics/node_statistics.hpp"
 
-#include "schema.hpp"
 #include "pstsdk/pst/folder.h"
 #include "utils.hpp"
 
@@ -27,9 +26,6 @@ PSTInputPartition::PSTInputPartition(const OpenFileInfo file, const PSTReadFunct
     : file(file), mode(mode), nodes(nodes), stats(stats) {
 }
 
-// Instantiates PST read table function data:
-// - Bind schema based on called table function name
-// - Glob over path, enumerate PSTs and their nodes (folders, or messages)
 PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientContext &ctx,
                                                    const PSTReadFunctionMode mode)
     : mode(mode) {
@@ -112,7 +108,7 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
 
-	auto global_state = make_uniq<PSTReadGlobalTableFunctionState>(bind_data, input.column_ids);
+	auto global_state = make_uniq<PSTReadGlobalState>(bind_data, input.column_ids);
 
 	return global_state;
 }
@@ -121,16 +117,16 @@ unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, Table
 unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, TableFunctionInitInput &input,
                                                      GlobalTableFunctionState *global) {
 	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-	auto &global_state = global->Cast<PSTReadGlobalTableFunctionState>();
+	auto &global_state = global->Cast<PSTReadGlobalState>();
 
-	unique_ptr<PSTIteratorLocalTableFunctionState> local_state = nullptr;
+	unique_ptr<PSTReadLocalState> local_state = nullptr;
 
 	switch (bind_data.mode) {
 	case PSTReadFunctionMode::Folder:
-		local_state = make_uniq<PSTConcreteIteratorState<folder>>(global_state, ec);
+		local_state = make_uniq<PSTReadRowSpoolerState<folder>>(global_state, ec);
 		break;
 	case PSTReadFunctionMode::Message:
-		local_state = make_uniq<PSTConcreteIteratorState<message>>(global_state, ec);
+		local_state = make_uniq<PSTReadRowSpoolerState<message>>(global_state, ec);
 		break;
 	default:
 		break;
@@ -150,18 +146,15 @@ unique_ptr<FunctionData> PSTReadBind(ClientContext &ctx, TableFunctionBindInput 
 	return std::move(function_data);
 }
 
-// Mount files from function data and count the number of folders/messages for cardinality estimates.
-// Folders: we already enumerated them when making function data state
-// Messages: we read the pbag attribute with a count instead of walking the iterator
 unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const FunctionData *data) {
 	auto pst_data = data->Cast<PSTReadTableFunctionData>();
-	idx_t estimated_cardinality = 0;
+	idx_t max_cardinality = 0;
 
 	for (auto &partition : pst_data.partitions) {
-		estimated_cardinality += partition.stats.count;
+		max_cardinality += partition.stats.count;
 	}
 
-	auto stats = make_uniq<NodeStatistics>(estimated_cardinality);
+	auto stats = make_uniq<NodeStatistics>(max_cardinality, max_cardinality);
 	return std::move(stats);
 }
 
@@ -185,7 +178,7 @@ TablePartitionInfo PSTPartitionInfo(ClientContext &ctx, TableFunctionPartitionIn
 
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
                        const GlobalTableFunctionState *global_state) {
-	auto &pst_state = global_state->Cast<PSTReadGlobalTableFunctionState>();
+	auto &pst_state = global_state->Cast<PSTReadGlobalState>();
 	auto &pst_data = bind_data->Cast<PSTReadTableFunctionData>();
 	auto cardinality = PSTReadCardinality(context, bind_data)->estimated_cardinality;
 	return (100.0 * pst_state.nodes_processed) / std::max<idx_t>(cardinality, 1);
@@ -193,7 +186,7 @@ double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output) {
 	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-	auto &local_state = input.local_state->Cast<PSTIteratorLocalTableFunctionState>();
+	auto &local_state = input.local_state->Cast<PSTReadLocalState>();
 
 	idx_t rows = local_state.emit_rows(output);
 	output.SetCardinality(rows);

@@ -161,8 +161,8 @@ void set_common_struct_fields(vector<Value> &values, pstsdk::const_property_obje
 }
 
 template <>
-void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk &output,
-                       pstsdk::const_property_object &bag, idx_t row_number, idx_t column_index) {
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::const_property_object &bag,
+                       idx_t row_number, idx_t column_index) {
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 	auto &pst_bag = local_state.pst->get_property_bag();
@@ -205,7 +205,7 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 }
 
 template <>
-void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk &output, pstsdk::message &msg,
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::message &msg,
                        idx_t row_number, idx_t column_index) {
 	auto &prop_bag = msg.get_property_bag();
 	auto schema_col = local_state.column_ids()[column_index];
@@ -302,8 +302,8 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 }
 
 template <>
-void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk &output,
-                       pstsdk::folder &folder, idx_t row_number, idx_t column_index) {
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::folder &folder,
+                       idx_t row_number, idx_t column_index) {
 	auto &prop_bag = folder.get_property_bag();
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
@@ -333,7 +333,7 @@ void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::
 }
 
 template <typename Item>
-void into_row(PSTIteratorLocalTableFunctionState &local_state, DataChunk &output, Item &item, idx_t row_number) {
+void into_row(PSTReadLocalState &local_state, DataChunk &output, Item &item, idx_t row_number) {
 	for (idx_t col_idx = 0; col_idx < local_state.column_ids().size(); ++col_idx) {
 		try {
 			// TODO: easier to do this here for now to not forget to bind common columns
