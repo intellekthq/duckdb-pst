@@ -29,7 +29,7 @@ PSTInputPartition::PSTInputPartition(const OpenFileInfo file, const PSTReadFunct
 
 // Instantiates PST read table function data:
 // - Bind schema based on called table function name
-// - Glob over provided path and enumerate PSTs + their folder IDs
+// - Glob over path, enumerate PSTs and their nodes (folders, or messages)
 PSTReadTableFunctionData::PSTReadTableFunctionData(const string &&path, ClientContext &ctx,
                                                    const PSTReadFunctionMode mode)
     : mode(mode) {
@@ -104,6 +104,8 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 			DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", file.path, e.what());
 		}
 	}
+
+	DUCKDB_LOG_INFO(ctx, "Planned %d partitions (%d files)", partitions.size(), files.size());
 }
 
 // Load enumerated function state data into queues for spooler state
@@ -186,7 +188,7 @@ double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
 	auto &pst_state = global_state->Cast<PSTReadGlobalTableFunctionState>();
 	auto &pst_data = bind_data->Cast<PSTReadTableFunctionData>();
 	auto cardinality = PSTReadCardinality(context, bind_data)->estimated_cardinality;
-	return (100.0 * pst_state.nodes_processed) / cardinality;
+	return (100.0 * pst_state.nodes_processed) / std::max<idx_t>(cardinality, 1);
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output) {

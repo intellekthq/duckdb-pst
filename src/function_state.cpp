@@ -51,8 +51,9 @@ PSTIteratorLocalTableFunctionState::PSTIteratorLocalTableFunctionState(PSTReadGl
 
 bool PSTIteratorLocalTableFunctionState::bind_partition() {
 	auto next_partition = global_state.take_partition();
-	if (!partition.has_value())
+	if (!next_partition.has_value())
 		return false;
+
 	partition.emplace(std::move(*next_partition));
 	pst.emplace(pstsdk::pst(utils::to_wstring(partition->file.path)));
 
@@ -72,6 +73,10 @@ template <typename t>
 PSTConcreteIteratorState<t>::PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state,
                                                       ExecutionContext &ec)
     : PSTIteratorLocalTableFunctionState(global_state, ec) {
+	if (partition.has_value()) {
+		current.emplace(partition->nodes.begin());
+		end.emplace(partition->nodes.end());
+	}
 }
 
 template <typename t>
@@ -108,13 +113,14 @@ folder PSTConcreteIteratorState<folder>::current_item() {
 
 template <typename t>
 bool PSTConcreteIteratorState<t>::bind_next() {
-	bool bound = !finished() && this->bind_next();
-	if (bound) {
+	while (finished()) {
+		if (!bind_partition())
+			return false;
 		current.emplace(partition->nodes.begin());
 		end.emplace(partition->nodes.end());
 	}
 
-	return bound;
+	return true;
 }
 
 template <typename t>
