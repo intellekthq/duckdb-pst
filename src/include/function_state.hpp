@@ -1,10 +1,8 @@
 #pragma once
 
 #include "duckdb.hpp"
-#include "duckdb/common/open_file_info.hpp"
+
 #include "duckdb/common/typedefs.hpp"
-#include "duckdb/common/types.hpp"
-#include "duckdb/common/unique_ptr.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "table_function.hpp"
 
@@ -15,102 +13,102 @@ namespace intellekt::duckpst {
 using namespace duckdb;
 using namespace pstsdk;
 
-// The global state for a PST read is initialized from a list of globbed files, which is
-// turned into a mutex'd queue, exposing iteration via:
-//
-// - take_file()     -> a PST at a time
-// - take_folder()  -> a directory at a time within a PST
-// - take_message() -> a message at a time within a PST folder
-//
-// Folders for each PST are eagerly enumerated during init of bind_data to be available
-// for cardinality estimates.
-//
-// Messages are lazily enumerated on demand while spooling via take*.
-//
-class PSTReadGlobalTableFunctionState : public GlobalTableFunctionState {
-	// take_file
-	boost::synchronized_value<queue<OpenFileInfo>> files;
-
-	// take_folder
-	queue<queue<node_id>> folder_ids;
-
-	// take_messages
-	std::optional<OpenFileInfo> current_file;
-	boost::synchronized_value<std::optional<queue<node_id>>> current_message_ids;
-
-	int64_t bind_message_ids();
-
-	idx_t files_processed;
-	idx_t folders_processed;
-	idx_t messages_processed;
+/**
+ * The global PST read state is a queue of input partitions, where the progress
+ * of the read is determined by the number of NDB nodes spooled.
+ */
+class PSTReadGlobalState : public GlobalTableFunctionState {
+	boost::synchronized_value<queue<PSTInputPartition>> partitions;
 
 public:
-	PSTReadGlobalTableFunctionState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids);
-	const LogicalType &output_schema;
+	PSTReadGlobalState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids);
 	const PSTReadTableFunctionData &bind_data;
 
+	std::optional<PSTInputPartition> take_partition();
+
+	idx_t nodes_processed;
 	vector<column_t> column_ids;
-
 	idx_t MaxThreads() const override;
-	double progress() const;
-
-	std::optional<OpenFileInfo> take_file();
-	std::optional<std::pair<OpenFileInfo, node_id>> take_folder();
-	std::optional<std::pair<OpenFileInfo, vector<node_id>>> take_messages(idx_t n);
 };
 
-// PSTIteratorLocalTableFunctionState is a generic data bag that holds a PST instance,
-// folder ID, or list of message IDs depending on the scan being executed. Reads are
-// parallelized: several threads can process parts of a single large file, or different
-// files altogether.
-
-// The local state is responsible for spooling rows into a DataChunk ref. Concrete
-// impls of the iterator state override for their own emit_rows behavior. The output schema
-// can be confirmed in the global state, but is 1:1 with the item type.
-
-// Concrete impls must be provided for each iterator type we wish to spool. In pstsdk,
-// the iterators for ndb backed iterators and table backed iterators have different types
-// (so e.g. subfolders need their own concrete implementations).
-//
-class PSTIteratorLocalTableFunctionState : public LocalTableFunctionState {
+/**
+ * The local (per-thread) read state spools node_ids out of a partition,
+ * asking for a new one after all nodes have been output.
+ */
+class PSTReadLocalState : public LocalTableFunctionState {
 protected:
-	std::optional<pst> pst;
-	std::optional<node_id> folder_id;
-	std::optional<vector<node_id>> message_batch;
+	PSTReadLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec);
 
-	OpenFileInfo file;
-	PSTIteratorLocalTableFunctionState(PSTReadGlobalTableFunctionState &global_state, ExecutionContext &ec);
+	/**
+	 * @brief Dequeue a partition from global state
+	 *
+	 * @return true A partition was received
+	 * @return false No partitions are available
+	 */
+	bool bind_partition();
 
 public:
 	ExecutionContext &ec;
-	PSTReadGlobalTableFunctionState &global_state;
+	PSTReadGlobalState &global_state;
 
+	std::optional<pstsdk::pst> pst;
+	std::optional<PSTInputPartition> partition;
+
+	/**
+	 * @brief Spools rows into DataChunk
+	 *
+	 * @param output Current data chunk
+	 * @return idx_t Number of rows
+	 */
 	virtual idx_t emit_rows(DataChunk &output) {
 		return 0;
 	}
 
 	const vector<column_t> &column_ids();
-	const OpenFileInfo &current_file();
-	const std::optional<class pst> &current_pst();
+	const LogicalType &output_schema();
 };
 
-template <typename it, typename t>
-class PSTConcreteIteratorState : public PSTIteratorLocalTableFunctionState {
+typedef vector<node_id>::iterator node_id_iterator;
+
+/**
+ * Concrete local state implementation for a specific pstsdk type
+ *
+ * @tparam t pstsdk item type
+ */
+template <typename t>
+class PSTReadRowSpoolerState : public PSTReadLocalState {
 	t current_item();
 
 protected:
-	std::optional<it> current;
-	std::optional<it> end;
+	std::optional<node_id_iterator> current;
+	std::optional<node_id_iterator> end;
 
 	bool bind_next();
-	void bind_iter();
 
 public:
-	PSTConcreteIteratorState(PSTReadGlobalTableFunctionState &global_state, ExecutionContext &ec);
+	PSTReadRowSpoolerState(PSTReadGlobalState &global_state, ExecutionContext &ec);
 
+	/**
+	 * @brief Is this partition done?
+	 *
+	 * @return true
+	 * @return false
+	 */
 	const bool finished();
 
+	/**
+	 * @brief Get the next item and move the iterator
+	 *
+	 * @return std::optional<t>
+	 */
 	std::optional<t> next();
+
+	/**
+	 * @brief Concrete row spooler for `t`
+	 *
+	 * @param output
+	 * @return idx_t
+	 */
 	idx_t emit_rows(DataChunk &output) override;
 };
 

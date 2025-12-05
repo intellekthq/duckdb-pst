@@ -13,11 +13,11 @@ template <typename T>
 duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag, pstsdk::prop_id prop);
 
 template <typename Item>
-void set_output_column(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk &output, Item &item,
-                       idx_t row_number, idx_t column_index);
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, Item &item, idx_t row_number,
+                       idx_t column_index);
 
 template <typename Item>
-void into_row(PSTIteratorLocalTableFunctionState &local_state, duckdb::DataChunk &output, Item &item, idx_t row_number);
+void into_row(PSTReadLocalState &local_state, duckdb::DataChunk &output, Item &item, idx_t row_number);
 
 template <typename Item>
 duckdb::Value into_struct(const LogicalType &t, Item item);
