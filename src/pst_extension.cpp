@@ -19,10 +19,12 @@ static void LoadInternal(ExtensionLoader &loader) {
 	proto.init_global = duckpst::PSTReadInitGlobal;
 	proto.init_local = duckpst::PSTReadInitLocal;
 	proto.table_scan_progress = duckpst::PSTReadProgress;
-	proto.projection_pushdown = true;
 	proto.get_partition_stats = duckpst::PSTPartitionStats;
 	proto.get_partition_info = duckpst::PSTPartitionInfo;
 	proto.dynamic_to_string = duckpst::PSTDynamicToString;
+
+	proto.projection_pushdown = true;
+	proto.named_parameters = duckpst::NAMED_PARAMETERS;
 
 	for (auto pair : duckpst::FUNCTIONS) {
 		TableFunction concrete = proto;

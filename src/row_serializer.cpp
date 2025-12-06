@@ -1,6 +1,7 @@
 #include "row_serializer.hpp"
 #include "function_state.hpp"
 #include "pstsdk/pst/message.h"
+#include "pstsdk/util/util.h"
 #include "schema.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/types/value.hpp"
@@ -69,8 +70,35 @@ duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag
 	return duckdb_value;
 }
 
+template <typename T>
+duckdb::Value from_prop_stream(const LogicalType &t, pstsdk::const_property_object &bag, pstsdk::prop_id prop,
+                               idx_t read_size_bytes) {
+	Value duckdb_value = Value(nullptr);
+	if (!bag.prop_exists(prop))
+		return duckdb_value;
+
+	auto stream = bag.open_prop_stream(prop);
+	vector<pstsdk::byte> buf(read_size_bytes);
+	stream.read(reinterpret_cast<char *>(buf.data()), read_size_bytes);
+	stream.close();
+
+	auto prop_type = bag.get_prop_type(prop);
+
+	if constexpr (std::is_same_v<T, std::string>) {
+		if (prop_type == pstsdk::prop_type_string) {
+			duckdb_value = Value(std::string(buf.begin(), buf.end()));
+		} else {
+			duckdb_value = Value(std::string(pstsdk::bytes_to_string(buf)));
+		}
+	} else if constexpr (std::is_same_v<T, vector<pstsdk::byte>>) {
+		duckdb_value = Value::BLOB_RAW(std::string(buf.begin(), buf.end()));
+	}
+
+	return duckdb_value;
+}
+
 template <>
-duckdb::Value into_struct(const LogicalType &t, pstsdk::attachment attachment) {
+duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, pstsdk::attachment attachment) {
 	auto attachment_prop_bag = attachment.get_property_bag();
 	vector<Value> values;
 
@@ -92,7 +120,8 @@ duckdb::Value into_struct(const LogicalType &t, pstsdk::attachment attachment) {
 	// when ATTACH_BY_VALUE
 	// TODO: support the other attach methods
 	// https://stackoverflow.com/a/4693174
-	if (!attachment.is_message() && attachment.content_size() > 0) {
+	if (!attachment.is_message() && attachment.content_size() > 0 &&
+	    local_state.global_state.bind_data.read_attachment_body()) {
 		values.emplace_back(from_prop<std::vector<pstsdk::byte>>(
 		    StructType::GetChildType(t, static_cast<int>(schema::AttachmentProjection::bytes)), attachment_prop_bag,
 		    PR_ATTACH_DATA_BIN));
@@ -104,7 +133,7 @@ duckdb::Value into_struct(const LogicalType &t, pstsdk::attachment attachment) {
 }
 
 template <>
-duckdb::Value into_struct(const LogicalType &t, pstsdk::recipient recipient) {
+duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, pstsdk::recipient recipient) {
 	auto recipient_prop_bag = recipient.get_property_row();
 	vector<Value> values;
 
@@ -212,6 +241,8 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 
+	auto read_size = local_state.global_state.bind_data.max_body_size_bytes();
+
 	switch (schema_col) {
 	case static_cast<int>(schema::MessageProjection::message_id):
 		output.SetValue(column_index, row_number, Value::UBIGINT(msg.get_id()));
@@ -259,10 +290,16 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_BODY_CRC));
 		break;
 	case static_cast<int>(schema::MessageProjection::body):
-		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_BODY_A));
+		if (read_size == 0)
+			read_size = msg.body_size();
+		output.SetValue(column_index, row_number,
+		                from_prop_stream<std::string>(col_type, prop_bag, PR_BODY_A, read_size));
 		break;
 	case static_cast<int>(schema::MessageProjection::body_html):
-		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_HTML));
+		if (read_size == 0)
+			read_size = msg.html_body_size();
+		output.SetValue(column_index, row_number,
+		                from_prop_stream<std::string>(col_type, prop_bag, PR_HTML, read_size));
 		break;
 	case static_cast<int>(schema::MessageProjection::internet_message_id):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_INTERNET_MESSAGE_ID));
@@ -274,7 +311,7 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		vector<Value> recipients;
 		for (auto it = msg.recipient_begin(); it != msg.recipient_end(); ++it) {
 			try {
-				recipients.emplace_back(into_struct(schema::RECIPIENT_SCHEMA, *it));
+				recipients.emplace_back(into_struct(local_state, schema::RECIPIENT_SCHEMA, *it));
 			} catch (std::exception &e) {
 				DUCKDB_LOG_ERROR(local_state.ec, "Unable to serialize recipient struct: %s", e.what());
 				recipients.emplace_back(Value(nullptr));
@@ -287,7 +324,7 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		vector<Value> attachments;
 		for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
 			try {
-				attachments.emplace_back(into_struct(schema::ATTACHMENT_SCHEMA, *it));
+				attachments.emplace_back(into_struct(local_state, schema::ATTACHMENT_SCHEMA, *it));
 			} catch (std::exception &e) {
 				DUCKDB_LOG_ERROR(local_state.ec, "Unable to serialize attachment struct: %s", e.what());
 				attachments.emplace_back(Value(nullptr));

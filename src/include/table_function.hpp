@@ -22,6 +22,7 @@ using namespace duckdb;
 using namespace pstsdk;
 
 static constexpr idx_t DEFAULT_PARTITION_SIZE = DEFAULT_STANDARD_VECTOR_SIZE * 2;
+static constexpr idx_t DEFAULT_BODY_SIZE_BYTES = 1000000;
 
 enum PSTReadFunctionMode { Folder, Message, NUM_SHAPES };
 
@@ -40,6 +41,10 @@ static const map<string, PSTReadFunctionMode> FUNCTIONS = {
     {"read_pst_folders", Folder},
     {"read_pst_messages", Message},
 };
+
+static const named_parameter_type_map_t NAMED_PARAMETERS = {{"max_body_size_bytes", LogicalType::UBIGINT},
+                                                            {"partition_size", LogicalType::UBIGINT},
+                                                            {"read_attachment_body", LogicalType::BOOLEAN}};
 
 /**
  * A PST read as expressed by node IDs in a file
@@ -72,7 +77,10 @@ public:
 	PSTReadTableFunctionData(ClientContext &ctx, const string &&path, const PSTReadFunctionMode mode,
 	                         duckdb::named_parameter_map_t &named_parameters);
 
+	// Parameters
 	const idx_t partition_size() const;
+	const idx_t max_body_size_bytes() const;
+	const bool read_attachment_body() const;
 
 	/**
 	 * @brief Bind table function output schema based on read mode
@@ -88,6 +96,10 @@ public:
 	 * @param ctx
 	 */
 	void plan_input_partitions(ClientContext &ctx);
+
+private:
+	template <typename T>
+	const T parameter_or_default(const char *parameter_name, T default_value) const;
 };
 
 unique_ptr<FunctionData> PSTReadBind(ClientContext &ctx, TableFunctionBindInput &input,

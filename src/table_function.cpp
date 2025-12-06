@@ -42,12 +42,25 @@ PSTReadTableFunctionData::PSTReadTableFunctionData(ClientContext &ctx, const str
 	plan_input_partitions(ctx);
 }
 
+template <typename T>
+const T PSTReadTableFunctionData::parameter_or_default(const char *parameter_name, T default_value) const {
+	auto maybe_item = named_parameters.find(parameter_name);
+	if (maybe_item == named_parameters.end())
+		return default_value;
+	auto &[_, v] = *maybe_item;
+	return v.GetValue<T>();
+}
+
 const idx_t PSTReadTableFunctionData::partition_size() const {
-	auto maybe_partition_size = named_parameters.find("partition_size");
-	if (maybe_partition_size == named_parameters.end())
-		return DEFAULT_PARTITION_SIZE;
-	auto &[_, v] = *maybe_partition_size;
-	return std::max<idx_t>(v.GetValue<idx_t>(), 1);
+	return std::max<idx_t>(parameter_or_default("partition_size", DEFAULT_PARTITION_SIZE), 1);
+}
+
+const idx_t PSTReadTableFunctionData::max_body_size_bytes() const {
+	return parameter_or_default("max_body_size_bytes", DEFAULT_BODY_SIZE_BYTES);
+}
+
+const bool PSTReadTableFunctionData::read_attachment_body() const {
+	return parameter_or_default("read_attachment_body", false);
 }
 
 void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalType> &return_types,
