@@ -73,6 +73,8 @@ void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalT
 }
 
 void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
+	if (!partitions.empty())
+		return;
 	auto total_rows = 0;
 
 	for (auto &file : files) {

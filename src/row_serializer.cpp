@@ -77,12 +77,14 @@ duckdb::Value from_prop_stream(const LogicalType &t, pstsdk::const_property_obje
 	if (!bag.prop_exists(prop))
 		return duckdb_value;
 
+	auto prop_type = bag.get_prop_type(prop);
 	auto stream = bag.open_prop_stream(prop);
+	if (prop_type == pstsdk::prop_type_wstring && (read_size_bytes % 2) != 0)
+		++read_size_bytes;
+
 	vector<pstsdk::byte> buf(read_size_bytes);
 	stream.read(reinterpret_cast<char *>(buf.data()), read_size_bytes);
 	stream.close();
-
-	auto prop_type = bag.get_prop_type(prop);
 
 	if constexpr (std::is_same_v<T, std::string>) {
 		if (prop_type == pstsdk::prop_type_string) {
@@ -114,14 +116,20 @@ duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, 
 	values.emplace_back(
 	    from_prop<std::string>(StructType::GetChildType(t, static_cast<int>(schema::AttachmentProjection::mime_type)),
 	                           attachment_prop_bag, PR_ATTACH_MIME_TAG_A));
-	values.emplace_back(Value::UBIGINT(attachment.content_size()));
+
+	if (attachment_prop_bag.prop_exists(PR_ATTACH_DATA_BIN)) {
+		values.emplace_back(Value::UBIGINT(attachment.content_size()));
+	} else {
+		values.emplace_back(Value(nullptr));
+	}
+
 	values.emplace_back(Value::BOOLEAN(attachment.is_message()));
 
 	// when ATTACH_BY_VALUE
 	// TODO: support the other attach methods
 	// https://stackoverflow.com/a/4693174
-	if (!attachment.is_message() && attachment.content_size() > 0 &&
-	    local_state.global_state.bind_data.read_attachment_body()) {
+	if (attachment_prop_bag.prop_exists(PR_ATTACH_DATA_BIN) && !attachment.is_message() &&
+	    attachment.content_size() > 0 && local_state.global_state.bind_data.read_attachment_body()) {
 		values.emplace_back(from_prop<std::vector<pstsdk::byte>>(
 		    StructType::GetChildType(t, static_cast<int>(schema::AttachmentProjection::bytes)), attachment_prop_bag,
 		    PR_ATTACH_DATA_BIN));
@@ -163,8 +171,6 @@ void set_common_struct_fields(vector<Value> &values, pstsdk::const_property_obje
 		auto col_type = StructType::GetChildType(schema::COMMON_SCHEMA, col);
 
 		switch (col) {
-		case static_cast<int>(schema::CommonProjection::row_id):
-			values.emplace_back(from_prop<int32_t>(col_type, bag, PR_ROWID));
 			break;
 		case static_cast<int>(schema::CommonProjection::entry_id):
 			values.emplace_back(from_prop<std::vector<pstsdk::byte>>(col_type, bag, PR_ENTRYID));
@@ -205,9 +211,6 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		output.SetValue(
 		    column_index, row_number,
 		    from_prop<std::string>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_DISPLAY_NAME_A));
-		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::row_id):
-		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, bag, PR_ROWID));
 		break;
 	case static_cast<int>(schema::CommonWithPSTProjection::entry_id):
 		output.SetValue(column_index, row_number, from_prop<std::vector<pstsdk::byte>>(col_type, bag, PR_ENTRYID));
@@ -286,18 +289,17 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		output.SetValue(column_index, row_number, Value::UBIGINT(attachment_count));
 		break;
 	}
-	case static_cast<int>(schema::MessageProjection::body_crc):
-		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_BODY_CRC));
-		break;
 	case static_cast<int>(schema::MessageProjection::body):
 		if (read_size == 0)
 			read_size = msg.body_size();
+		read_size = std::min<idx_t>(read_size, msg.body_size());
 		output.SetValue(column_index, row_number,
 		                from_prop_stream<std::string>(col_type, prop_bag, PR_BODY_A, read_size));
 		break;
 	case static_cast<int>(schema::MessageProjection::body_html):
 		if (read_size == 0)
 			read_size = msg.html_body_size();
+		read_size = std::min<idx_t>(read_size, msg.html_body_size());
 		output.SetValue(column_index, row_number,
 		                from_prop_stream<std::string>(col_type, prop_bag, PR_HTML, read_size));
 		break;
