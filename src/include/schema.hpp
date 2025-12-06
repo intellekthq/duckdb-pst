@@ -66,7 +66,6 @@ enum class PSTMetaProjection { PST_META_CHILDREN(SCHEMA_CHILD_NAME) };
 
 // These are MAPI attributes shared by all objects; they form the base row of a PST read
 #define COMMON_CHILDREN(LT)                                                                                            \
-	LT(row_id, LogicalType::INTEGER)                                                                                   \
 	LT(entry_id, LogicalType::BLOB)                                                                                    \
 	LT(parent_entry_id, LogicalType::BLOB)                                                                             \
 	LT(display_name, LogicalType::VARCHAR)                                                                             \
@@ -118,7 +117,6 @@ static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({ATTACHMENT_CHILDREN(S
 	LT(message_size, LogicalType::UBIGINT)                                                                             \
 	LT(has_attachments, LogicalType::BOOLEAN)                                                                          \
 	LT(attachment_count, LogicalType::UINTEGER)                                                                        \
-	LT(body_crc, LogicalType::INTEGER)                                                                                 \
 	LT(body, LogicalType::VARCHAR)                                                                                     \
 	LT(body_html, LogicalType::VARCHAR)                                                                                \
 	LT(internet_message_id, LogicalType::VARCHAR)                                                                      \
