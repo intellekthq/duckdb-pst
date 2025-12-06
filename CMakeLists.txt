@@ -22,6 +22,7 @@ set(
   src/table_function.cpp
   src/pst_extension.cpp
   src/row_serializer.cpp
+  src/pstsdk_duckdb_filesystem.cpp
 )
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})

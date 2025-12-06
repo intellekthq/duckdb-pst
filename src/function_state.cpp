@@ -6,6 +6,7 @@
 #include "pstsdk/pst/folder.h"
 #include "pstsdk/pst/message.h"
 #include "table_function.hpp"
+#include "pstsdk_duckdb_filesystem.hpp"
 #include "utils.hpp"
 #include <optional>
 #include <utility>
@@ -53,7 +54,7 @@ bool PSTReadLocalState::bind_partition() {
 		return false;
 
 	partition.emplace(std::move(*next_partition));
-	pst.emplace(pstsdk::pst(utils::to_wstring(partition->file.path)));
+	pst.emplace(pstsdk::pst(dfile::open(FileSystem::GetFileSystem(ec.client), next_partition->file)));
 
 	return true;
 }
