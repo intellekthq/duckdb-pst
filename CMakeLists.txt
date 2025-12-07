@@ -44,6 +44,20 @@ endif()
 include_directories(${DUCKPST_INCLUDE})
 target_link_libraries(${EXTENSION_NAME} ${DUCKPST_LINK})
 
+# Useful when testing
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    duckdb_extension_load(aws
+        GIT_URL https://github.com/duckdb/duckdb-aws
+        GIT_TAG main
+    )
+
+    duckdb_extension_load(ui
+        (DONT_LINK)
+        GIT_URL https://github.com/duckdb/duckdb-ui
+        GIT_TAG main
+    )
+endif()
+
 install(
   TARGETS ${EXTENSION_NAME}
   EXPORT "${DUCKDB_EXPORT_SET}"
