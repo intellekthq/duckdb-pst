@@ -11,6 +11,7 @@ namespace intellekt::duckpst {
  */
 class dfile : public pstsdk::file {
 	duckdb::unique_ptr<duckdb::FileHandle> file_handle;
+	duckdb::ClientContext &ctx;
 
 public:
 	/**
@@ -19,9 +20,9 @@ public:
 	 * @param fs DuckDB filesystem
 	 * @param file DuckDB file info
 	 */
-	dfile(duckdb::FileSystem &fs, const duckdb::OpenFileInfo &file);
+	dfile(duckdb::ClientContext &ctx, const duckdb::OpenFileInfo &file);
 
-	static std::shared_ptr<pstsdk::file> open(duckdb::FileSystem &fs, const duckdb::OpenFileInfo &finfo);
+	static std::shared_ptr<pstsdk::file> open(duckdb::ClientContext &ctx, const duckdb::OpenFileInfo &finfo);
 
 	size_t read(std::vector<pstsdk::byte> &buffer, pstsdk::ulonglong offset) const override;
 	size_t write(const std::vector<pstsdk::byte> &buffer, pstsdk::ulonglong offset) override;
