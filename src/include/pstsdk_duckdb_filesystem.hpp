@@ -11,7 +11,6 @@ namespace intellekt::duckpst {
  */
 class dfile : public pstsdk::file {
 	duckdb::unique_ptr<duckdb::FileHandle> file_handle;
-	duckdb::ClientContext &ctx;
 
 public:
 	/**

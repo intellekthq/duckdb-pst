@@ -80,11 +80,8 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 	auto &fs = FileSystem::GetFileSystem(ctx);
 
 	for (auto &finfo : files) {
-		// auto handle = fs.OpenFile(file, FileOpenFlags::FILE_FLAGS_READ);
-		auto handle = dfile(fs, finfo);
-
 		try {
-			auto pst = pstsdk::pst(dfile::open(fs, finfo));
+			auto pst = pstsdk::pst(dfile::open(ctx, finfo));
 			vector<node_id> nodes;
 
 			// TODO
