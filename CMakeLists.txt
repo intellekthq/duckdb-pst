@@ -22,6 +22,7 @@ set(
   src/table_function.cpp
   src/pst_extension.cpp
   src/row_serializer.cpp
+  src/pstsdk_duckdb_filesystem.cpp
 )
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
@@ -42,6 +43,20 @@ endif()
 
 include_directories(${DUCKPST_INCLUDE})
 target_link_libraries(${EXTENSION_NAME} ${DUCKPST_LINK})
+
+# Useful when testing
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    duckdb_extension_load(aws
+        GIT_URL https://github.com/duckdb/duckdb-aws
+        GIT_TAG main
+    )
+
+    duckdb_extension_load(ui
+        (DONT_LINK)
+        GIT_URL https://github.com/duckdb/duckdb-ui
+        GIT_TAG main
+    )
+endif()
 
 install(
   TARGETS ${EXTENSION_NAME}

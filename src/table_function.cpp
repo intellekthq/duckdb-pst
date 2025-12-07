@@ -1,7 +1,9 @@
 #include "table_function.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/file_open_flags.hpp"
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/vector_size.hpp"
+#include "pstsdk_duckdb_filesystem.hpp"
 #include "duckdb/function/partition_stats.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/logging/logger.hpp"
@@ -20,7 +22,6 @@
 
 namespace intellekt::duckpst {
 using namespace duckdb;
-using namespace pstsdk;
 
 PSTInputPartition::PSTInputPartition(const OpenFileInfo file, const PSTReadFunctionMode mode,
                                      const vector<node_id> &&nodes, const PartitionStatistics &&stats)
@@ -76,10 +77,11 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 	if (!partitions.empty())
 		return;
 	auto total_rows = 0;
+	auto &fs = FileSystem::GetFileSystem(ctx);
 
-	for (auto &file : files) {
+	for (auto &finfo : files) {
 		try {
-			auto pst = pstsdk::pst(utils::to_wstring(file.path));
+			auto pst = pstsdk::pst(dfile::open(ctx, finfo));
 			vector<node_id> nodes;
 
 			// TODO
@@ -118,11 +120,11 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 				total_rows += partition_nodes.size();
 
 				partitions.emplace_back(
-				    std::move(PSTInputPartition(file, mode, std::move(partition_nodes), std::move(stats))));
+				    std::move(PSTInputPartition(finfo, mode, std::move(partition_nodes), std::move(stats))));
 			}
 
 		} catch (const std::exception &e) {
-			DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", file.path, e.what());
+			DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", finfo.path, e.what());
 		}
 	}
 
