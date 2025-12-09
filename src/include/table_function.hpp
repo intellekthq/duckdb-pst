@@ -2,6 +2,7 @@
 
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/open_file_info.hpp"
+#include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/vector_size.hpp"
 #include "duckdb/execution/execution_context.hpp"
@@ -50,18 +51,20 @@ static const named_parameter_type_map_t NAMED_PARAMETERS = {{"max_body_size_byte
  * A PST read as expressed by node IDs in a file
  */
 struct PSTInputPartition {
+	const shared_ptr<pstsdk::pst> pst;
 	const OpenFileInfo file;
 	const PSTReadFunctionMode mode;
 	const PartitionStatistics stats;
 	vector<node_id> nodes;
 
-	PSTInputPartition(const OpenFileInfo file, const PSTReadFunctionMode mode, const vector<node_id> &&nodes,
+	PSTInputPartition(const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file, const PSTReadFunctionMode mode, const vector<node_id> &&nodes,
 	                  const PartitionStatistics &&stats);
 };
 
 struct PSTReadTableFunctionData : public TableFunctionData {
 	vector<OpenFileInfo> files;
 	vector<PSTInputPartition> partitions;
+
 	duckdb::named_parameter_map_t named_parameters;
 
 public:

@@ -23,9 +23,9 @@
 namespace intellekt::duckpst {
 using namespace duckdb;
 
-PSTInputPartition::PSTInputPartition(const OpenFileInfo file, const PSTReadFunctionMode mode,
+PSTInputPartition::PSTInputPartition(const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file, const PSTReadFunctionMode mode,
                                      const vector<node_id> &&nodes, const PartitionStatistics &&stats)
-    : file(file), mode(mode), nodes(nodes), stats(stats) {
+    : pst(pst), file(file), mode(mode), nodes(nodes), stats(stats) {
 }
 
 PSTReadTableFunctionData::PSTReadTableFunctionData(ClientContext &ctx, const string &&path,
@@ -81,19 +81,20 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 
 	for (auto &finfo : files) {
 		try {
-			auto pst = pstsdk::pst(dfile::open(ctx, finfo));
+			auto pst = make_shared_ptr<pstsdk::pst>(dfile::open(ctx, finfo));
+
 			vector<node_id> nodes;
 
 			// TODO
 			switch (mode) {
 			case PSTReadFunctionMode::Folder:
-				for (pstsdk::pst::folder_filter_iterator it = pst.folder_node_begin(); it != pst.folder_node_end();
+				for (pstsdk::pst::folder_filter_iterator it = pst->folder_node_begin(); it != pst->folder_node_end();
 				     ++it) {
 					nodes.emplace_back(it->id);
 				}
 				break;
 			case PSTReadFunctionMode::Message:
-				for (pstsdk::pst::message_filter_iterator it = pst.message_node_begin(); it != pst.message_node_end();
+				for (pstsdk::pst::message_filter_iterator it = pst->message_node_begin(); it != pst->message_node_end();
 				     ++it) {
 					nodes.emplace_back(it->id);
 				}
@@ -119,8 +120,9 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 				stats.count = partition_nodes.size();
 				total_rows += partition_nodes.size();
 
-				partitions.emplace_back(
-				    std::move(PSTInputPartition(finfo, mode, std::move(partition_nodes), std::move(stats))));
+				partitions.emplace_back<PSTInputPartition>(
+					{pst, finfo, mode, std::move(partition_nodes), std::move(stats)}
+				);
 			}
 
 		} catch (const std::exception &e) {

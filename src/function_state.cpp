@@ -53,8 +53,9 @@ bool PSTReadLocalState::bind_partition() {
 	if (!next_partition.has_value())
 		return false;
 
+	bool skip_bind_pst = partition.has_value() && (next_partition->file.path == partition->file.path);
 	partition.emplace(std::move(*next_partition));
-	pst.emplace(pstsdk::pst(dfile::open(ec.client, next_partition->file)));
+	if (!skip_bind_pst) pst.emplace(pstsdk::pst(*partition->pst));
 
 	return true;
 }
