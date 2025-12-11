@@ -1,8 +1,6 @@
 #include "table_function.hpp"
 #include "duckdb/common/exception.hpp"
-#include "duckdb/common/file_open_flags.hpp"
 #include "duckdb/common/named_parameter_map.hpp"
-#include "duckdb/common/vector_size.hpp"
 #include "pstsdk_duckdb_filesystem.hpp"
 #include "duckdb/function/partition_stats.hpp"
 #include "duckdb/function/table_function.hpp"
@@ -18,7 +16,7 @@
 #include "duckdb/storage/statistics/node_statistics.hpp"
 
 #include "pstsdk/pst/folder.h"
-#include "utils.hpp"
+#include <limits>
 
 namespace intellekt::duckpst {
 using namespace duckdb;
@@ -65,6 +63,10 @@ const bool PSTReadTableFunctionData::read_attachment_body() const {
 	return parameter_or_default("read_attachment_body", false);
 }
 
+const idx_t PSTReadTableFunctionData::read_limit() const {
+	return parameter_or_default("read_limit", std::numeric_limits<idx_t>().max());
+}
+
 void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalType> &return_types,
                                                                  vector<string> &names) {
 	auto schema = output_schema(mode);
@@ -79,8 +81,12 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 		return;
 	auto total_rows = 0;
 	auto &fs = FileSystem::GetFileSystem(ctx);
+	auto limit = this->read_limit();
 
 	for (auto &finfo : files) {
+		if (total_rows >= limit)
+			break;
+
 		try {
 			auto pst = make_shared_ptr<pstsdk::pst>(dfile::open(ctx, finfo));
 
@@ -91,12 +97,16 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 			case PSTReadFunctionMode::Folder:
 				for (pstsdk::pst::folder_filter_iterator it = pst->folder_node_begin(); it != pst->folder_node_end();
 				     ++it) {
+					if (nodes.size() >= limit)
+						break;
 					nodes.emplace_back(it->id);
 				}
 				break;
 			case PSTReadFunctionMode::Message:
 				for (pstsdk::pst::message_filter_iterator it = pst->message_node_begin(); it != pst->message_node_end();
 				     ++it) {
+					if (nodes.size() >= limit)
+						break;
 					nodes.emplace_back(it->id);
 				}
 				break;

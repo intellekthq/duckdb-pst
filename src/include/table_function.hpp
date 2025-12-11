@@ -45,7 +45,8 @@ static const map<string, PSTReadFunctionMode> FUNCTIONS = {
 
 static const named_parameter_type_map_t NAMED_PARAMETERS = {{"max_body_size_bytes", LogicalType::UBIGINT},
                                                             {"partition_size", LogicalType::UBIGINT},
-                                                            {"read_attachment_body", LogicalType::BOOLEAN}};
+                                                            {"read_attachment_body", LogicalType::BOOLEAN},
+                                                            {"read_limit", LogicalType::UBIGINT}};
 
 /**
  * A PST read as expressed by node IDs in a file
@@ -84,6 +85,7 @@ public:
 	const idx_t partition_size() const;
 	const idx_t max_body_size_bytes() const;
 	const bool read_attachment_body() const;
+	const idx_t read_limit() const;
 
 	/**
 	 * @brief Bind table function output schema based on read mode
