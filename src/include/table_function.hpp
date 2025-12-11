@@ -57,8 +57,8 @@ struct PSTInputPartition {
 	const PartitionStatistics stats;
 	vector<node_id> nodes;
 
-	PSTInputPartition(const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file, const PSTReadFunctionMode mode, const vector<node_id> &&nodes,
-	                  const PartitionStatistics &&stats);
+	PSTInputPartition(const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file, const PSTReadFunctionMode mode,
+	                  const vector<node_id> &&nodes, const PartitionStatistics &&stats);
 };
 
 struct PSTReadTableFunctionData : public TableFunctionData {

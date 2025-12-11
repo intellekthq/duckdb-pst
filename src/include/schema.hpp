@@ -60,14 +60,16 @@ static const auto ATTACH_METHOD_ENUM = AttachMethodSchema();
 
 #define PST_META_CHILDREN(LT)                                                                                          \
 	LT(pst_path, LogicalType::VARCHAR)                                                                                 \
-	LT(pst_name, LogicalType::VARCHAR)
+	LT(pst_name, LogicalType::VARCHAR)                                                                                 \
+	LT(record_key, LogicalType::BLOB)
 
 enum class PSTMetaProjection { PST_META_CHILDREN(SCHEMA_CHILD_NAME) };
 
 // These are MAPI attributes shared by all objects; they form the base row of a PST read
 #define COMMON_CHILDREN(LT)                                                                                            \
-	LT(entry_id, LogicalType::BLOB)                                                                                    \
-	LT(parent_entry_id, LogicalType::BLOB)                                                                             \
+	/* TODO: these are computed properties (see spec: 2.4.3.2 Mapping between EntryID and NID) */                      \
+	/* LT(entry_id, LogicalType::BLOB) */                                                                              \
+	/* LT(parent_entry_id, LogicalType::BLOB) */                                                                       \
 	LT(display_name, LogicalType::VARCHAR)                                                                             \
 	LT(comment, LogicalType::VARCHAR)                                                                                  \
 	LT(creation_time, LogicalType::TIMESTAMP_S)                                                                        \
@@ -105,7 +107,7 @@ enum class AttachmentProjection { ATTACHMENT_CHILDREN(SCHEMA_CHILD_NAME) };
 static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({ATTACHMENT_CHILDREN(SCHEMA_CHILD)});
 
 #define MESSAGE_CHILDREN(LT)                                                                                           \
-	LT(message_id, LogicalType::UINTEGER)                                                                              \
+	LT(node_id, LogicalType::UINTEGER)                                                                                 \
 	LT(subject, LogicalType::VARCHAR)                                                                                  \
 	LT(sender_name, LogicalType::VARCHAR)                                                                              \
 	LT(sender_email_address, LogicalType::VARCHAR)                                                                     \
@@ -132,17 +134,14 @@ static const auto MESSAGE_SCHEMA =
     LogicalType::STRUCT({PST_META_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) MESSAGE_CHILDREN(SCHEMA_CHILD)});
 
 #define FOLDER_CHILDREN(LT)                                                                                            \
-	LT(parent_folder_id, LogicalType::UINTEGER)                                                                        \
-	LT(folder_id, LogicalType::UINTEGER)                                                                               \
-	LT(folder_name, LogicalType::VARCHAR)                                                                              \
+	LT(display_name, LogicalType::VARCHAR)                                                                             \
+	LT(node_id, LogicalType::UINTEGER)                                                                                 \
+	LT(parent_node_id, LogicalType::UINTEGER)                                                                          \
 	LT(subfolder_count, LogicalType::UINTEGER)                                                                         \
 	LT(message_count, LogicalType::BIGINT)                                                                             \
 	LT(unread_message_count, LogicalType::BIGINT)
 
-enum class FolderProjection {
-	PST_META_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) FOLDER_CHILDREN(SCHEMA_CHILD_NAME)
-};
+enum class FolderProjection { PST_META_CHILDREN(SCHEMA_CHILD_NAME) FOLDER_CHILDREN(SCHEMA_CHILD_NAME) };
 
-static const auto FOLDER_SCHEMA =
-    LogicalType::STRUCT({PST_META_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) FOLDER_CHILDREN(SCHEMA_CHILD)});
+static const auto FOLDER_SCHEMA = LogicalType::STRUCT({PST_META_CHILDREN(SCHEMA_CHILD) FOLDER_CHILDREN(SCHEMA_CHILD)});
 } // namespace intellekt::duckpst::schema

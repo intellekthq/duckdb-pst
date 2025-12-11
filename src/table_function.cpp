@@ -23,8 +23,9 @@
 namespace intellekt::duckpst {
 using namespace duckdb;
 
-PSTInputPartition::PSTInputPartition(const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file, const PSTReadFunctionMode mode,
-                                     const vector<node_id> &&nodes, const PartitionStatistics &&stats)
+PSTInputPartition::PSTInputPartition(const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file,
+                                     const PSTReadFunctionMode mode, const vector<node_id> &&nodes,
+                                     const PartitionStatistics &&stats)
     : pst(pst), file(file), mode(mode), nodes(nodes), stats(stats) {
 }
 
@@ -121,8 +122,7 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 				total_rows += partition_nodes.size();
 
 				partitions.emplace_back<PSTInputPartition>(
-					{pst, finfo, mode, std::move(partition_nodes), std::move(stats)}
-				);
+				    {pst, finfo, mode, std::move(partition_nodes), std::move(stats)});
 			}
 
 		} catch (const std::exception &e) {

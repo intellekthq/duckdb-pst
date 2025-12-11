@@ -83,6 +83,7 @@ duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, 
  * @param values
  * @param bag
  */
-void set_common_struct_fields(vector<Value> &values, pstsdk::const_property_object &bag);
+void set_common_struct_fields(vector<Value> &values, pstsdk::const_property_object &bag, const LogicalType &col_type,
+                              idx_t col);
 
 } // namespace intellekt::duckpst::row_serializer
