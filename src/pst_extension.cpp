@@ -22,7 +22,10 @@ static void LoadInternal(ExtensionLoader &loader) {
 	proto.get_partition_stats = duckpst::PSTPartitionStats;
 	proto.get_partition_info = duckpst::PSTPartitionInfo;
 	proto.dynamic_to_string = duckpst::PSTDynamicToString;
+	proto.get_virtual_columns = duckpst::PSTVirtualColumns;
+	proto.get_row_id_columns = duckpst::PSTRowIDColumns;
 
+	proto.late_materialization = true;
 	proto.projection_pushdown = true;
 	proto.named_parameters = duckpst::NAMED_PARAMETERS;
 

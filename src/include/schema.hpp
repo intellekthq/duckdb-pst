@@ -6,6 +6,11 @@
 namespace intellekt::duckpst::schema {
 using namespace duckdb;
 
+// TODO: this is an extern and we want constexpr, so copy it for now
+static constexpr column_t DUCKDB_VIRTUAL_COLUMN_START = UINT64_C(9223372036854775808);
+static constexpr auto PST_PATH_COLUMN = DUCKDB_VIRTUAL_COLUMN_START;
+static constexpr auto PST_NODE_ID = DUCKDB_VIRTUAL_COLUMN_START + 1;
+
 inline LogicalType RecipientTypeSchema() {
 	Vector values(LogicalType::VARCHAR, 3);
 	auto data = FlatVector::GetData<string_t>(values);
@@ -54,18 +59,22 @@ static const auto ATTACH_METHOD_ENUM = AttachMethodSchema();
 
 // We'll generate our table function output schemas using x-macros so the serialization code
 // doesn't have to bind against a position ordinal and we can move columns around
-
 #define SCHEMA_CHILD(name, type)     {#name, type},
 #define SCHEMA_CHILD_NAME(name, ...) name,
 
-#define PST_META_CHILDREN(LT)                                                                                          \
+/* Per-file PST attributes (incl. virtual columns) */
+
+#define PST_CHILDREN(LT)                                                                                               \
 	LT(pst_path, LogicalType::VARCHAR)                                                                                 \
 	LT(pst_name, LogicalType::VARCHAR)                                                                                 \
-	LT(record_key, LogicalType::BLOB)
+	LT(record_key, LogicalType::BLOB)                                                                                  \
+	LT(node_id, LogicalType::UINTEGER)
 
-enum class PSTMetaProjection { PST_META_CHILDREN(SCHEMA_CHILD_NAME) };
+enum class PSTProjection { PST_CHILDREN(SCHEMA_CHILD_NAME) };
+static const auto PST_SCHEMA = LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD)});
 
-// These are MAPI attributes shared by all objects; they form the base row of a PST read
+/* Common MAPI attributes schema */
+
 #define COMMON_CHILDREN(LT)                                                                                            \
 	/* TODO: these are computed properties (see spec: 2.4.3.2 Mapping between EntryID and NID) */                      \
 	/* LT(entry_id, LogicalType::BLOB) */                                                                              \
@@ -79,7 +88,7 @@ enum class CommonProjection { COMMON_CHILDREN(SCHEMA_CHILD_NAME) NUM_FIELDS };
 
 static const auto COMMON_SCHEMA = LogicalType::STRUCT({COMMON_CHILDREN(SCHEMA_CHILD)});
 
-enum class CommonWithPSTProjection { PST_META_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) };
+/* Recipient struct schema */
 
 #define RECIPIENT_CHILDREN(LT)                                                                                         \
 	LT(account_name, LogicalType::VARCHAR)                                                                             \
@@ -92,6 +101,8 @@ enum class RecipientProjection { COMMON_CHILDREN(SCHEMA_CHILD_NAME) RECIPIENT_CH
 
 static const auto RECIPIENT_SCHEMA =
     LogicalType::STRUCT({COMMON_CHILDREN(SCHEMA_CHILD) RECIPIENT_CHILDREN(SCHEMA_CHILD)});
+
+/* Attachment struct schema */
 
 #define ATTACHMENT_CHILDREN(LT)                                                                                        \
 	LT(attach_content_id, LogicalType::VARCHAR)                                                                        \
@@ -106,8 +117,12 @@ enum class AttachmentProjection { ATTACHMENT_CHILDREN(SCHEMA_CHILD_NAME) };
 
 static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({ATTACHMENT_CHILDREN(SCHEMA_CHILD)});
 
+/* Common fields in message and folder */
+enum class PSTCommonChildren { PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) NUM_FIELDS };
+
+/* Message schema */
+
 #define MESSAGE_CHILDREN(LT)                                                                                           \
-	LT(node_id, LogicalType::UINTEGER)                                                                                 \
 	LT(subject, LogicalType::VARCHAR)                                                                                  \
 	LT(sender_name, LogicalType::VARCHAR)                                                                              \
 	LT(sender_email_address, LogicalType::VARCHAR)                                                                     \
@@ -127,21 +142,22 @@ static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({ATTACHMENT_CHILDREN(S
 	LT(attachments, LogicalType::LIST(ATTACHMENT_SCHEMA))
 
 enum class MessageProjection {
-	PST_META_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) MESSAGE_CHILDREN(SCHEMA_CHILD_NAME)
+	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) MESSAGE_CHILDREN(SCHEMA_CHILD_NAME)
 };
 
 static const auto MESSAGE_SCHEMA =
-    LogicalType::STRUCT({PST_META_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) MESSAGE_CHILDREN(SCHEMA_CHILD)});
+    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) MESSAGE_CHILDREN(SCHEMA_CHILD)});
+
+/* Folder schema */
 
 #define FOLDER_CHILDREN(LT)                                                                                            \
 	LT(display_name, LogicalType::VARCHAR)                                                                             \
-	LT(node_id, LogicalType::UINTEGER)                                                                                 \
 	LT(parent_node_id, LogicalType::UINTEGER)                                                                          \
 	LT(subfolder_count, LogicalType::UINTEGER)                                                                         \
 	LT(message_count, LogicalType::BIGINT)                                                                             \
 	LT(unread_message_count, LogicalType::BIGINT)
 
-enum class FolderProjection { PST_META_CHILDREN(SCHEMA_CHILD_NAME) FOLDER_CHILDREN(SCHEMA_CHILD_NAME) };
+enum class FolderProjection { PST_CHILDREN(SCHEMA_CHILD_NAME) FOLDER_CHILDREN(SCHEMA_CHILD_NAME) };
 
-static const auto FOLDER_SCHEMA = LogicalType::STRUCT({PST_META_CHILDREN(SCHEMA_CHILD) FOLDER_CHILDREN(SCHEMA_CHILD)});
+static const auto FOLDER_SCHEMA = LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) FOLDER_CHILDREN(SCHEMA_CHILD)});
 } // namespace intellekt::duckpst::schema

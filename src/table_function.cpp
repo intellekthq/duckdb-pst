@@ -1,6 +1,8 @@
 #include "table_function.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/multi_file/multi_file_reader.hpp"
 #include "duckdb/common/named_parameter_map.hpp"
+#include "duckdb/common/table_column.hpp"
 #include "pstsdk_duckdb_filesystem.hpp"
 #include "duckdb/function/partition_stats.hpp"
 #include "duckdb/function/table_function.hpp"
@@ -16,6 +18,7 @@
 #include "duckdb/storage/statistics/node_statistics.hpp"
 
 #include "pstsdk/pst/folder.h"
+#include "schema.hpp"
 #include <limits>
 
 namespace intellekt::duckpst {
@@ -26,6 +29,10 @@ PSTInputPartition::PSTInputPartition(const shared_ptr<pstsdk::pst> pst, const Op
                                      const PartitionStatistics &&stats)
     : pst(pst), file(file), mode(mode), nodes(nodes), stats(stats) {
 }
+
+PSTInputPartition::PSTInputPartition(const PSTInputPartition &other_partition)
+    : pst(other_partition.pst), file(other_partition.file), mode(other_partition.mode), stats(other_partition.stats),
+      nodes(other_partition.nodes) {};
 
 PSTReadTableFunctionData::PSTReadTableFunctionData(ClientContext &ctx, const string &&path,
                                                    const PSTReadFunctionMode mode,
@@ -143,11 +150,31 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 	DUCKDB_LOG_INFO(ctx, "Planned %d partitions (%d files)", partitions.size(), files.size());
 }
 
+PSTReadTableFunctionData::PSTReadTableFunctionData(const PSTReadTableFunctionData &other_data) : mode(other_data.mode) {
+	files = other_data.files;
+	partitions = vector<PSTInputPartition>(other_data.partitions.begin(), other_data.partitions.end());
+	named_parameters = other_data.named_parameters;
+}
+
+unique_ptr<FunctionData> PSTReadTableFunctionData::Copy() const {
+	return make_uniq<PSTReadTableFunctionData>(*this);
+}
+
 unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
+	std::cout << "column_ids: ";
+	for (auto &cid : input.column_ids) {
+		std::cout << cid << ",";
+	}
+	std::cout << std::endl;
+
+	std::cout << "column_indexes: ";
+	for (auto &cid : input.column_indexes) {
+		std::cout << cid.GetPrimaryIndex() << ",";
+	}
+	std::cout << std::endl;
+
 	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-
 	auto global_state = make_uniq<PSTReadGlobalState>(bind_data, input.column_ids);
-
 	return global_state;
 }
 
@@ -231,6 +258,30 @@ InsertionOrderPreservingMap<string> PSTDynamicToString(duckdb::TableFunctionDyna
 	meta.insert(make_pair("Partition size", std::to_string(pst_data.partition_size())));
 
 	return std::move(meta);
+}
+
+// TODO: TIL about `MultiFileReader`
+virtual_column_map_t PSTVirtualColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data) {
+	DUCKDB_LOG_DEBUG(ctx, "get_virtual_columns [PSTVirtualColumns]");
+
+	virtual_column_map_t virtual_cols;
+
+	virtual_cols.emplace(make_pair(
+	    schema::PST_PATH_COLUMN,
+	    TableColumn("__pst_path",
+	                StructType::GetChildType(schema::PST_SCHEMA, static_cast<int>(schema::PSTProjection::pst_path)))));
+
+	virtual_cols.emplace(make_pair(
+	    schema::PST_NODE_ID,
+	    TableColumn("__node_id",
+	                StructType::GetChildType(schema::PST_SCHEMA, static_cast<int>(schema::PSTProjection::node_id)))));
+
+	return virtual_cols;
+}
+
+vector<column_t> PSTRowIDColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data) {
+	DUCKDB_LOG_DEBUG(ctx, "get_row_id_columns [PSTRowIDColumns]");
+	return {schema::PST_PATH_COLUMN, schema::PST_NODE_ID};
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output) {

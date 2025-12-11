@@ -99,6 +99,11 @@ std::optional<t> PSTReadRowSpoolerState<t>::next() {
 	return x;
 }
 
+template <typename t>
+node_id PSTReadRowSpoolerState<t>::current_node_id() {
+	return **current;
+}
+
 template <>
 message PSTReadRowSpoolerState<message>::current_item() {
 	auto msg_id = **current;

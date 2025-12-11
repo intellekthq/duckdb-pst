@@ -78,6 +78,7 @@ typedef vector<node_id>::iterator node_id_iterator;
 template <typename t>
 class PSTReadRowSpoolerState : public PSTReadLocalState {
 	t current_item();
+	node_id current_node_id();
 
 protected:
 	std::optional<node_id_iterator> current;

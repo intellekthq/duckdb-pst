@@ -2,7 +2,7 @@
 
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/open_file_info.hpp"
-#include "duckdb/common/shared_ptr.hpp"
+#include "duckdb/common/table_column.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/vector_size.hpp"
 #include "duckdb/execution/execution_context.hpp"
@@ -60,6 +60,7 @@ struct PSTInputPartition {
 
 	PSTInputPartition(const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file, const PSTReadFunctionMode mode,
 	                  const vector<node_id> &&nodes, const PartitionStatistics &&stats);
+	PSTInputPartition(const PSTInputPartition &other_partition);
 };
 
 struct PSTReadTableFunctionData : public TableFunctionData {
@@ -81,6 +82,8 @@ public:
 	PSTReadTableFunctionData(ClientContext &ctx, const string &&path, const PSTReadFunctionMode mode,
 	                         duckdb::named_parameter_map_t &named_parameters);
 
+	PSTReadTableFunctionData(const PSTReadTableFunctionData &other_data);
+
 	// Parameters
 	const idx_t partition_size() const;
 	const idx_t max_body_size_bytes() const;
@@ -101,6 +104,13 @@ public:
 	 * @param ctx
 	 */
 	void plan_input_partitions(ClientContext &ctx);
+
+	/**
+	 * @brief Copy this function data (used by late materialization)
+	 *
+	 * @return unique_ptr<FunctionData>
+	 */
+	unique_ptr<FunctionData> Copy() const override;
 
 private:
 	template <typename T>
@@ -125,6 +135,10 @@ double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
                        const GlobalTableFunctionState *global_state);
 
 InsertionOrderPreservingMap<string> PSTDynamicToString(duckdb::TableFunctionDynamicToStringInput &);
+
+virtual_column_map_t PSTVirtualColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data);
+
+vector<column_t> PSTRowIDColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data);
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output);
 } // namespace intellekt::duckpst

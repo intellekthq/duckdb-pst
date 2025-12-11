@@ -198,33 +198,33 @@ template <>
 void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::const_property_object &bag,
                        idx_t row_number, idx_t column_index) {
 	auto schema_col = local_state.column_ids()[column_index];
-	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 	auto &pst_bag = local_state.pst->get_property_bag();
+	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 
 	switch (schema_col) {
-	case static_cast<int>(schema::CommonWithPSTProjection::pst_path):
+	case static_cast<int>(schema::PSTCommonChildren::pst_path):
 		output.SetValue(column_index, row_number, Value(local_state.partition->file.path));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::pst_name):
+	case static_cast<int>(schema::PSTCommonChildren::pst_name):
 		output.SetValue(
 		    column_index, row_number,
 		    from_prop<std::string>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_DISPLAY_NAME_A));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::record_key):
+	case static_cast<int>(schema::PSTCommonChildren::record_key):
 		output.SetValue(
 		    column_index, row_number,
 		    from_prop<std::vector<pstsdk::byte>>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_RECORD_KEY));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::display_name):
+	case static_cast<int>(schema::PSTCommonChildren::display_name):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, bag, PR_DISPLAY_NAME_A));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::comment):
+	case static_cast<int>(schema::PSTCommonChildren::comment):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, bag, PR_COMMENT_A));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::creation_time):
+	case static_cast<int>(schema::PSTCommonChildren::creation_time):
 		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, bag, PR_CREATION_TIME));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::last_modified):
+	case static_cast<int>(schema::PSTCommonChildren::last_modified):
 		output.SetValue(column_index, row_number,
 		                from_prop<pstsdk::ulonglong>(col_type, bag, PR_LAST_MODIFICATION_TIME));
 		break;
@@ -239,7 +239,6 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	auto &prop_bag = msg.get_property_bag();
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
-
 	auto read_size = local_state.global_state.bind_data.max_body_size_bytes();
 
 	switch (schema_col) {
@@ -346,22 +345,22 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 
 	switch (schema_col) {
 	case static_cast<int>(schema::FolderProjection::display_name):
-		output.SetValue(schema_col, row_number, from_prop<std::string>(col_type, prop_bag, PR_DISPLAY_NAME_A));
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_DISPLAY_NAME_A));
 		break;
 	case static_cast<int>(schema::FolderProjection::node_id):
-		output.SetValue(schema_col, row_number, Value::UINTEGER(folder.get_id()));
+		output.SetValue(column_index, row_number, Value::UINTEGER(folder.get_id()));
 		break;
 	case static_cast<int>(schema::FolderProjection::parent_node_id):
-		output.SetValue(schema_col, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
+		output.SetValue(column_index, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
 		break;
 	case static_cast<int>(schema::FolderProjection::subfolder_count):
-		output.SetValue(schema_col, row_number, Value::UINTEGER(folder.get_subfolder_count()));
+		output.SetValue(column_index, row_number, Value::UINTEGER(folder.get_subfolder_count()));
 		break;
 	case static_cast<int>(schema::FolderProjection::message_count):
-		output.SetValue(schema_col, row_number, Value::BIGINT(folder.get_message_count()));
+		output.SetValue(column_index, row_number, Value::BIGINT(folder.get_message_count()));
 		break;
 	case static_cast<int>(schema::FolderProjection::unread_message_count):
-		output.SetValue(schema_col, row_number, Value::BIGINT(folder.get_unread_message_count()));
+		output.SetValue(column_index, row_number, Value::BIGINT(folder.get_unread_message_count()));
 		break;
 	default:
 		break;
@@ -371,13 +370,27 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 template <typename Item>
 void into_row(PSTReadLocalState &local_state, DataChunk &output, Item &item, idx_t row_number) {
 	for (idx_t col_idx = 0; col_idx < local_state.column_ids().size(); ++col_idx) {
+		auto schema_col = local_state.column_ids()[col_idx];
+
+		switch (schema_col) {
+		case schema::PST_NODE_ID:
+			output.SetValue(col_idx, row_number, Value::UINTEGER(item.get_id()));
+			continue;
+		case schema::PST_PATH_COLUMN:
+			output.SetValue(col_idx, row_number, Value(local_state.partition->file.path));
+			continue;
+			break;
+		default:
+			break;
+		}
+
 		try {
-			// TODO: easier to do this here for now to not forget to bind common columns
+			// Bind common columns
 			if constexpr (std::is_same_v<Item, pstsdk::message>) {
 				auto &prop_bag = item.get_property_bag();
 				set_output_column<const_property_object>(local_state, output, prop_bag, row_number, col_idx);
 			}
-			// For folders, this only binds the two PST related columns
+			// For folders, this only binds PST_CHILDREN
 			else if constexpr (std::is_same_v<Item, pstsdk::folder>) {
 				auto &prop_bag = item.get_property_bag();
 				set_output_column<const_property_object>(local_state, output, prop_bag, row_number, col_idx);
