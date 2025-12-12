@@ -79,7 +79,9 @@ duckdb::Value from_prop_stream(const LogicalType &t, pstsdk::const_property_obje
 
 	auto prop_type = bag.get_prop_type(prop);
 	auto stream = bag.open_prop_stream(prop);
-	if (prop_type == pstsdk::prop_type_wstring && (read_size_bytes % 2) != 0)
+
+	// TODO: shitty force align for wchar, have to do it because some PST writers lie about the type
+	if ((read_size_bytes % 2) != 0)
 		++read_size_bytes;
 
 	vector<pstsdk::byte> buf(read_size_bytes);
@@ -126,10 +128,13 @@ duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, 
 			values[col] = Value::UBIGINT(attachment.content_size());
 			break;
 		case static_cast<int>(schema::AttachmentProjection::is_message):
+			if (!attachment_prop_bag.prop_exists(PR_ATTACH_METHOD))
+				break;
 			values[col] = Value::BOOLEAN(attachment.is_message());
 			break;
 		case static_cast<int>(schema::AttachmentProjection::bytes):
-			if (!attachment_prop_bag.prop_exists(PR_ATTACH_DATA_BIN) || attachment.is_message() ||
+			if (!attachment_prop_bag.prop_exists(PR_ATTACH_METHOD) ||
+			    !attachment_prop_bag.prop_exists(PR_ATTACH_DATA_BIN) || attachment.is_message() ||
 			    attachment.content_size() <= 0 || !local_state.global_state.bind_data.read_attachment_body()) {
 				break;
 			}
@@ -156,10 +161,10 @@ duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, 
 			values[col] = from_prop<std::string>(col_type, recipient_prop_bag, PR_ACCOUNT_A);
 			break;
 		case static_cast<int>(schema::RecipientProjection::email_address):
-			values[col] = from_prop<int32_t>(col_type, recipient_prop_bag, PR_EMAIL_ADDRESS_A);
+			values[col] = from_prop<std::string>(col_type, recipient_prop_bag, PR_EMAIL_ADDRESS_A);
 			break;
 		case static_cast<int>(schema::RecipientProjection::address_type):
-			values[col] = from_prop<int32_t>(col_type, recipient_prop_bag, PR_ADDRTYPE_A);
+			values[col] = from_prop<std::string>(col_type, recipient_prop_bag, PR_ADDRTYPE_A);
 			break;
 		case static_cast<int>(schema::RecipientProjection::recipient_type):
 			values[col] = from_prop<int32_t>(col_type, recipient_prop_bag, PR_RECIPIENT_TYPE);
@@ -234,6 +239,32 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 }
 
 template <>
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::pst &pst, idx_t row_number,
+                       idx_t column_index) {
+	auto schema_col = local_state.column_ids()[column_index];
+	auto &pst_bag = pst.get_property_bag();
+	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
+
+	switch (schema_col) {
+	case static_cast<int>(schema::PSTProjection::pst_path):
+		output.SetValue(column_index, row_number, Value(local_state.partition->file.path));
+		break;
+	case static_cast<int>(schema::PSTProjection::pst_name):
+		output.SetValue(
+		    column_index, row_number,
+		    from_prop<std::string>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_DISPLAY_NAME_A));
+		break;
+	case static_cast<int>(schema::PSTProjection::record_key):
+		output.SetValue(
+		    column_index, row_number,
+		    from_prop<std::vector<pstsdk::byte>>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_RECORD_KEY));
+		break;
+	default:
+		break;
+	}
+}
+
+template <>
 void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::message &msg,
                        idx_t row_number, idx_t column_index) {
 	auto &prop_bag = msg.get_property_bag();
@@ -242,9 +273,6 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	auto read_size = local_state.global_state.bind_data.max_body_size_bytes();
 
 	switch (schema_col) {
-	case static_cast<int>(schema::MessageProjection::node_id):
-		output.SetValue(column_index, row_number, Value::UINTEGER(msg.get_id()));
-		break;
 	case static_cast<int>(schema::MessageProjection::subject):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_SUBJECT_A));
 		break;
@@ -285,6 +313,11 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		break;
 	}
 	case static_cast<int>(schema::MessageProjection::body):
+		if (!prop_bag.prop_exists(PR_BODY_A)) {
+			output.SetValue(column_index, row_number, Value(nullptr));
+			return;
+		}
+
 		if (read_size == 0)
 			read_size = msg.body_size();
 		read_size = std::min<idx_t>(read_size, msg.body_size());
@@ -292,6 +325,11 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		                from_prop_stream<std::string>(col_type, prop_bag, PR_BODY_A, read_size));
 		break;
 	case static_cast<int>(schema::MessageProjection::body_html):
+		if (!prop_bag.prop_exists(PR_HTML)) {
+			output.SetValue(column_index, row_number, Value(nullptr));
+			return;
+		}
+
 		if (read_size == 0)
 			read_size = msg.html_body_size();
 		read_size = std::min<idx_t>(read_size, msg.html_body_size());
@@ -347,9 +385,6 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	case static_cast<int>(schema::FolderProjection::display_name):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_DISPLAY_NAME_A));
 		break;
-	case static_cast<int>(schema::FolderProjection::node_id):
-		output.SetValue(column_index, row_number, Value::UINTEGER(folder.get_id()));
-		break;
 	case static_cast<int>(schema::FolderProjection::parent_node_id):
 		output.SetValue(column_index, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
 		break;
@@ -372,40 +407,40 @@ void into_row(PSTReadLocalState &local_state, DataChunk &output, Item &item, idx
 	for (idx_t col_idx = 0; col_idx < local_state.column_ids().size(); ++col_idx) {
 		auto schema_col = local_state.column_ids()[col_idx];
 
+		// Bind virtual columns + node_id (should be 'infallible' as long as the file isn't borked)
 		switch (schema_col) {
-		case schema::PST_NODE_ID:
+		case schema::PST_ITEM_NODE_ID:
 			output.SetValue(col_idx, row_number, Value::UINTEGER(item.get_id()));
-			continue;
-		case schema::PST_PATH_COLUMN:
-			output.SetValue(col_idx, row_number, Value(local_state.partition->file.path));
-			continue;
+			break;
+		case schema::PST_PARTITION_INDEX:
+			output.SetValue(col_idx, row_number, Value::UBIGINT(local_state.partition->partition_index));
+			break;
+		case static_cast<int>(schema::PSTProjection::node_id):
+			output.SetValue(col_idx, row_number, Value::UINTEGER(item.get_id()));
 			break;
 		default:
-			break;
-		}
+			try {
+				// Bind PST attributes
+				set_output_column<pstsdk::pst>(local_state, output, *local_state.pst, row_number, col_idx);
 
-		try {
-			// Bind common columns
-			if constexpr (std::is_same_v<Item, pstsdk::message>) {
-				auto &prop_bag = item.get_property_bag();
-				set_output_column<const_property_object>(local_state, output, prop_bag, row_number, col_idx);
+				// Bind common columns (message only)
+				if constexpr (std::is_same_v<Item, pstsdk::message>) {
+					set_output_column<const_property_object>(local_state, output,
+					                                         static_cast<pstsdk::message>(item).get_property_bag(),
+					                                         row_number, col_idx);
+				}
+
+				set_output_column<Item>(local_state, output, item, row_number, col_idx);
+			} catch (std::exception &e) {
+				auto schema_col = local_state.column_ids()[col_idx];
+				auto &output_schema = local_state.output_schema();
+
+				DUCKDB_LOG_ERROR(local_state.ec, "Failed to read column: %s (%s)\nError: %s",
+				                 StructType::GetChildName(output_schema, schema_col),
+				                 StructType::GetChildType(output_schema, schema_col).ToString(), e.what());
+
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
-			// For folders, this only binds PST_CHILDREN
-			else if constexpr (std::is_same_v<Item, pstsdk::folder>) {
-				auto &prop_bag = item.get_property_bag();
-				set_output_column<const_property_object>(local_state, output, prop_bag, row_number, col_idx);
-			}
-
-			set_output_column<Item>(local_state, output, item, row_number, col_idx);
-		} catch (std::exception &e) {
-			auto schema_col = local_state.column_ids()[col_idx];
-			auto &output_schema = local_state.output_schema();
-
-			DUCKDB_LOG_ERROR(local_state.ec, "Failed to read column: %s (%s)\nError: %s",
-			                 StructType::GetChildName(output_schema, schema_col),
-			                 StructType::GetChildType(output_schema, schema_col).ToString(), e.what());
-
-			output.SetValue(col_idx, row_number, Value(nullptr));
 		}
 	}
 }

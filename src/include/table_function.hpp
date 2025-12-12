@@ -52,14 +52,15 @@ static const named_parameter_type_map_t NAMED_PARAMETERS = {{"max_body_size_byte
  * A PST read as expressed by node IDs in a file
  */
 struct PSTInputPartition {
+	const idx_t partition_index;
 	const shared_ptr<pstsdk::pst> pst;
 	const OpenFileInfo file;
 	const PSTReadFunctionMode mode;
 	const PartitionStatistics stats;
 	vector<node_id> nodes;
 
-	PSTInputPartition(const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file, const PSTReadFunctionMode mode,
-	                  const vector<node_id> &&nodes, const PartitionStatistics &&stats);
+	PSTInputPartition(const idx_t partition_index, const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file,
+	                  const PSTReadFunctionMode mode, const vector<node_id> &&nodes, const PartitionStatistics &&stats);
 	PSTInputPartition(const PSTInputPartition &other_partition);
 };
 

@@ -24,15 +24,15 @@
 namespace intellekt::duckpst {
 using namespace duckdb;
 
-PSTInputPartition::PSTInputPartition(const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file,
-                                     const PSTReadFunctionMode mode, const vector<node_id> &&nodes,
-                                     const PartitionStatistics &&stats)
-    : pst(pst), file(file), mode(mode), nodes(nodes), stats(stats) {
+PSTInputPartition::PSTInputPartition(const idx_t partition_index, const shared_ptr<pstsdk::pst> pst,
+                                     const OpenFileInfo file, const PSTReadFunctionMode mode,
+                                     const vector<node_id> &&nodes, const PartitionStatistics &&stats)
+    : partition_index(partition_index), pst(pst), file(file), mode(mode), nodes(nodes), stats(stats) {
 }
 
 PSTInputPartition::PSTInputPartition(const PSTInputPartition &other_partition)
-    : pst(other_partition.pst), file(other_partition.file), mode(other_partition.mode), stats(other_partition.stats),
-      nodes(other_partition.nodes) {};
+    : partition_index(other_partition.partition_index), pst(other_partition.pst), file(other_partition.file),
+      mode(other_partition.mode), stats(other_partition.stats), nodes(other_partition.nodes) {};
 
 PSTReadTableFunctionData::PSTReadTableFunctionData(ClientContext &ctx, const string &&path,
                                                    const PSTReadFunctionMode mode,
@@ -139,7 +139,7 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 				total_rows += partition_nodes.size();
 
 				partitions.emplace_back<PSTInputPartition>(
-				    {pst, finfo, mode, std::move(partition_nodes), std::move(stats)});
+				    {partitions.size(), pst, finfo, mode, std::move(partition_nodes), std::move(stats)});
 			}
 
 		} catch (const std::exception &e) {
@@ -161,18 +161,6 @@ unique_ptr<FunctionData> PSTReadTableFunctionData::Copy() const {
 }
 
 unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
-	std::cout << "column_ids: ";
-	for (auto &cid : input.column_ids) {
-		std::cout << cid << ",";
-	}
-	std::cout << std::endl;
-
-	std::cout << "column_indexes: ";
-	for (auto &cid : input.column_indexes) {
-		std::cout << cid.GetPrimaryIndex() << ",";
-	}
-	std::cout << std::endl;
-
 	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
 	auto global_state = make_uniq<PSTReadGlobalState>(bind_data, input.column_ids);
 	return global_state;
@@ -266,22 +254,15 @@ virtual_column_map_t PSTVirtualColumns(ClientContext &ctx, optional_ptr<Function
 
 	virtual_column_map_t virtual_cols;
 
-	virtual_cols.emplace(make_pair(
-	    schema::PST_PATH_COLUMN,
-	    TableColumn("__pst_path",
-	                StructType::GetChildType(schema::PST_SCHEMA, static_cast<int>(schema::PSTProjection::pst_path)))));
-
-	virtual_cols.emplace(make_pair(
-	    schema::PST_NODE_ID,
-	    TableColumn("__node_id",
-	                StructType::GetChildType(schema::PST_SCHEMA, static_cast<int>(schema::PSTProjection::node_id)))));
+	virtual_cols.emplace(make_pair(schema::PST_ITEM_NODE_ID, TableColumn("__node_id", LogicalType::UINTEGER)));
+	virtual_cols.emplace(make_pair(schema::PST_PARTITION_INDEX, TableColumn("__partition", LogicalType::UBIGINT)));
 
 	return virtual_cols;
 }
 
 vector<column_t> PSTRowIDColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data) {
 	DUCKDB_LOG_DEBUG(ctx, "get_row_id_columns [PSTRowIDColumns]");
-	return {schema::PST_PATH_COLUMN, schema::PST_NODE_ID};
+	return {schema::PST_ITEM_NODE_ID, schema::PST_PARTITION_INDEX};
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output) {

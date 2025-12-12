@@ -6,11 +6,13 @@
 namespace intellekt::duckpst::schema {
 using namespace duckdb;
 
+/* Virtual columns */
 // TODO: this is an extern and we want constexpr, so copy it for now
 static constexpr column_t DUCKDB_VIRTUAL_COLUMN_START = UINT64_C(9223372036854775808);
-static constexpr auto PST_PATH_COLUMN = DUCKDB_VIRTUAL_COLUMN_START;
-static constexpr auto PST_NODE_ID = DUCKDB_VIRTUAL_COLUMN_START + 1;
+static constexpr auto PST_PARTITION_INDEX = DUCKDB_VIRTUAL_COLUMN_START;
+static constexpr auto PST_ITEM_NODE_ID = DUCKDB_VIRTUAL_COLUMN_START + 1;
 
+/* Enum schemas */
 inline LogicalType RecipientTypeSchema() {
 	Vector values(LogicalType::VARCHAR, 3);
 	auto data = FlatVector::GetData<string_t>(values);
@@ -62,7 +64,7 @@ static const auto ATTACH_METHOD_ENUM = AttachMethodSchema();
 #define SCHEMA_CHILD(name, type)     {#name, type},
 #define SCHEMA_CHILD_NAME(name, ...) name,
 
-/* Per-file PST attributes (incl. virtual columns) */
+/* Per-file PST attributes */
 
 #define PST_CHILDREN(LT)                                                                                               \
 	LT(pst_path, LogicalType::VARCHAR)                                                                                 \
@@ -118,7 +120,10 @@ enum class AttachmentProjection { ATTACHMENT_CHILDREN(SCHEMA_CHILD_NAME) };
 static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({ATTACHMENT_CHILDREN(SCHEMA_CHILD)});
 
 /* Common fields in message and folder */
-enum class PSTCommonChildren { PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) NUM_FIELDS };
+enum class PSTCommonChildren {
+
+	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) NUM_FIELDS
+};
 
 /* Message schema */
 

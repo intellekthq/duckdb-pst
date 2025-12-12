@@ -147,7 +147,7 @@ idx_t PSTReadRowSpoolerState<t>::emit_rows(DataChunk &output) {
 	return rows;
 }
 
-template class PSTReadRowSpoolerState<folder>;
 template class PSTReadRowSpoolerState<message>;
+template class PSTReadRowSpoolerState<folder>;
 
 } // namespace intellekt::duckpst
