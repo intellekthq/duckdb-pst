@@ -141,5 +141,8 @@ virtual_column_map_t PSTVirtualColumns(ClientContext &ctx, optional_ptr<Function
 
 vector<column_t> PSTRowIDColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data);
 
+void PSTFilterPushdown(ClientContext &ctx, LogicalGet &get, FunctionData *bind_data,
+                       vector<unique_ptr<Expression>> &filters);
+
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output);
 } // namespace intellekt::duckpst
