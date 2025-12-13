@@ -1,19 +1,22 @@
 #pragma once
 
+#include "schema.hpp"
+
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/open_file_info.hpp"
 #include "duckdb/common/table_column.hpp"
 #include "duckdb/common/types.hpp"
+#include "duckdb/common/types/data_chunk.hpp"
 #include "duckdb/common/vector_size.hpp"
 #include "duckdb/execution/execution_context.hpp"
 #include "duckdb/function/function.hpp"
 #include "duckdb/function/partition_stats.hpp"
 #include "duckdb/function/table_function.hpp"
-#include "duckdb/common/types/data_chunk.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/storage/statistics/node_statistics.hpp"
-#include "schema.hpp"
+
 #include <pstsdk/pst.h>
+
 #include <boost/iterator/zip_iterator.hpp>
 #include <boost/range/combine.hpp>
 #include <boost/thread/synchronized_value.hpp>
@@ -56,11 +59,11 @@ struct PSTInputPartition {
 	const shared_ptr<pstsdk::pst> pst;
 	const OpenFileInfo file;
 	const PSTReadFunctionMode mode;
-	const PartitionStatistics stats;
+	PartitionStatistics stats;
 	vector<node_id> nodes;
 
 	PSTInputPartition(const idx_t partition_index, const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file,
-	                  const PSTReadFunctionMode mode, const vector<node_id> &&nodes, const PartitionStatistics &&stats);
+	                  const PSTReadFunctionMode mode, const PartitionStatistics stats, const vector<node_id> &&nodes);
 	PSTInputPartition(const PSTInputPartition &other_partition);
 };
 
@@ -128,9 +131,9 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 
 unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const FunctionData *data);
 
-vector<PartitionStatistics> PSTPartitionStats(ClientContext &ctx, GetPartitionStatsInput &input);
-
 TablePartitionInfo PSTPartitionInfo(ClientContext &ctx, TableFunctionPartitionInput &input);
+
+vector<PartitionStatistics> PSTPartitionStats(ClientContext &ctx, GetPartitionStatsInput &input);
 
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
                        const GlobalTableFunctionState *global_state);

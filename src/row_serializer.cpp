@@ -1,8 +1,7 @@
-#include "row_serializer.hpp"
 #include "function_state.hpp"
-#include "pstsdk/pst/message.h"
-#include "pstsdk/util/util.h"
+#include "row_serializer.hpp"
 #include "schema.hpp"
+
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/logging/logger.hpp"
@@ -10,7 +9,10 @@
 #include "pstsdk/ltp/propbag.h"
 #include "pstsdk/mapitags.h"
 #include "pstsdk/pst/folder.h"
+#include "pstsdk/pst/message.h"
 #include "pstsdk/util/primitives.h"
+#include "pstsdk/util/util.h"
+
 #include <cstdint>
 #include <type_traits>
 

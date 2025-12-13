@@ -1,7 +1,5 @@
 #pragma once
 
-#include "duckdb.hpp"
-
 #include "duckdb/common/typedefs.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "table_function.hpp"

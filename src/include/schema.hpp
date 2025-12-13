@@ -10,7 +10,10 @@ using namespace duckdb;
 // TODO: this is an extern and we want constexpr, so copy it for now
 static constexpr column_t DUCKDB_VIRTUAL_COLUMN_START = UINT64_C(9223372036854775808);
 static constexpr auto PST_PARTITION_INDEX = DUCKDB_VIRTUAL_COLUMN_START;
+static constexpr auto PST_PARTITION_INDEX_TYPE = LogicalType::UBIGINT;
+
 static constexpr auto PST_ITEM_NODE_ID = DUCKDB_VIRTUAL_COLUMN_START + 1;
+static constexpr auto PST_ITEM_NODE_ID_TYPE = LogicalType::UINTEGER;
 
 /* Enum schemas */
 inline LogicalType RecipientTypeSchema() {

@@ -1,13 +1,14 @@
 #include "function_state.hpp"
+#include "pstsdk_duckdb_filesystem.hpp"
+#include "row_serializer.hpp"
+#include "table_function.hpp"
+
 #include "duckdb/common/open_file_info.hpp"
 #include "duckdb/common/vector_size.hpp"
 #include "duckdb/logging/logger.hpp"
-#include "row_serializer.hpp"
+
 #include "pstsdk/pst/folder.h"
 #include "pstsdk/pst/message.h"
-#include "table_function.hpp"
-#include "pstsdk_duckdb_filesystem.hpp"
-#include "utils.hpp"
 #include <optional>
 #include <utility>
 

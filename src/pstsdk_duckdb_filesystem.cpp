@@ -1,8 +1,9 @@
-#include "pstsdk_duckdb_filesystem.hpp"
 #include "duckdb/common/file_open_flags.hpp"
 #include "duckdb/logging/logger.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "pstsdk_duckdb_filesystem.hpp"
 #include "pstsdk/util/util.h"
+
 #include <memory>
 
 namespace intellekt::duckpst {
