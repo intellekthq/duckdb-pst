@@ -20,7 +20,6 @@
 #include "pstsdk/pst/folder.h"
 #include "schema.hpp"
 #include <limits>
-#include <ostream>
 
 namespace intellekt::duckpst {
 using namespace duckdb;
@@ -163,13 +162,7 @@ unique_ptr<FunctionData> PSTReadTableFunctionData::Copy() const {
 
 unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-	std::optional<unique_ptr<TableFilterSet>> filters;
-
-	if (input.filters) {
-		filters.emplace(input.filters->Copy());
-	}
-
-	auto global_state = make_uniq<PSTReadGlobalState>(bind_data, input.column_ids, std::move(filters));
+	auto global_state = make_uniq<PSTReadGlobalState>(bind_data, input.column_ids);
 	return global_state;
 }
 
@@ -270,15 +263,6 @@ virtual_column_map_t PSTVirtualColumns(ClientContext &ctx, optional_ptr<Function
 vector<column_t> PSTRowIDColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data) {
 	DUCKDB_LOG_DEBUG(ctx, "get_row_id_columns [PSTRowIDColumns]");
 	return {schema::PST_ITEM_NODE_ID, schema::PST_PARTITION_INDEX};
-}
-
-void PSTFilterPushdown(ClientContext &ctx, LogicalGet &get, FunctionData *bind_data,
-                       vector<unique_ptr<Expression>> &filters) {
-	auto &pst_data = bind_data->Cast<PSTReadTableFunctionData>();
-	std::cout << "pstfilterpushdown" << std::endl;
-	for (auto &f : filters) {
-		f->Print();
-	}
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output) {

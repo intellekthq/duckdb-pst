@@ -13,19 +13,15 @@ namespace intellekt::duckpst {
 using namespace duckdb;
 using namespace pstsdk;
 
-bool apply_filter(Value &v, TableFilter &t, std::optional<ClientContext> ctx = std::nullopt);
-
 /**
  * The global PST read state is a queue of input partitions, where the progress
  * of the read is determined by the number of NDB nodes spooled.
  */
 class PSTReadGlobalState : public GlobalTableFunctionState {
 	boost::synchronized_value<queue<PSTInputPartition>> partitions;
-	std::optional<unique_ptr<TableFilterSet>> filters;
 
 public:
-	PSTReadGlobalState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids,
-	                   std::optional<unique_ptr<TableFilterSet>>);
+	PSTReadGlobalState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids);
 	const PSTReadTableFunctionData &bind_data;
 
 	std::optional<PSTInputPartition> take_partition();
