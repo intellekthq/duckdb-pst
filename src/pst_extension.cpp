@@ -2,11 +2,8 @@
 
 #include "table_function.hpp"
 #include "pst_extension.hpp"
-#include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/table_function.hpp"
-
-#include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
 namespace duckdb {
 using namespace intellekt;
@@ -18,11 +15,20 @@ static void LoadInternal(ExtensionLoader &loader) {
 	proto.cardinality = duckpst::PSTReadCardinality;
 	proto.init_global = duckpst::PSTReadInitGlobal;
 	proto.init_local = duckpst::PSTReadInitLocal;
-	proto.table_scan_progress = duckpst::PSTReadProgress;
-	proto.get_partition_stats = duckpst::PSTPartitionStats;
+
+	// Currently only used for basic count(*) pushdown
 	proto.get_partition_info = duckpst::PSTPartitionInfo;
+	proto.get_partition_stats = duckpst::PSTPartitionStats;
+
+	// For late materialization support, however we can't prune partitions
+	// without `filter_pushdown=true` and handling row-by-row filters ourselves
+	proto.get_virtual_columns = duckpst::PSTVirtualColumns;
+	proto.get_row_id_columns = duckpst::PSTRowIDColumns;
+
+	proto.table_scan_progress = duckpst::PSTReadProgress;
 	proto.dynamic_to_string = duckpst::PSTDynamicToString;
 
+	proto.late_materialization = true;
 	proto.projection_pushdown = true;
 	proto.named_parameters = duckpst::NAMED_PARAMETERS;
 

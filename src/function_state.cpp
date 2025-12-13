@@ -1,13 +1,14 @@
 #include "function_state.hpp"
+#include "pstsdk_duckdb_filesystem.hpp"
+#include "row_serializer.hpp"
+#include "table_function.hpp"
+
 #include "duckdb/common/open_file_info.hpp"
 #include "duckdb/common/vector_size.hpp"
 #include "duckdb/logging/logger.hpp"
-#include "row_serializer.hpp"
+
 #include "pstsdk/pst/folder.h"
 #include "pstsdk/pst/message.h"
-#include "table_function.hpp"
-#include "pstsdk_duckdb_filesystem.hpp"
-#include "utils.hpp"
 #include <optional>
 #include <utility>
 
@@ -53,8 +54,10 @@ bool PSTReadLocalState::bind_partition() {
 	if (!next_partition.has_value())
 		return false;
 
+	bool skip_bind_pst = partition.has_value() && (next_partition->file.path == partition->file.path);
 	partition.emplace(std::move(*next_partition));
-	pst.emplace(pstsdk::pst(dfile::open(ec.client, next_partition->file)));
+	if (!skip_bind_pst)
+		pst.emplace(pstsdk::pst(*partition->pst));
 
 	return true;
 }
@@ -95,6 +98,11 @@ std::optional<t> PSTReadRowSpoolerState<t>::next() {
 	t x = current_item();
 	++(*current);
 	return x;
+}
+
+template <typename t>
+node_id PSTReadRowSpoolerState<t>::current_node_id() {
+	return **current;
 }
 
 template <>
@@ -140,7 +148,7 @@ idx_t PSTReadRowSpoolerState<t>::emit_rows(DataChunk &output) {
 	return rows;
 }
 
-template class PSTReadRowSpoolerState<folder>;
 template class PSTReadRowSpoolerState<message>;
+template class PSTReadRowSpoolerState<folder>;
 
 } // namespace intellekt::duckpst

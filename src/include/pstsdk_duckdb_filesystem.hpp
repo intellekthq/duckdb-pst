@@ -1,8 +1,8 @@
 #include "duckdb/common/file_system.hpp"
+#include "duckdb/common/open_file_info.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "pstsdk/util/primitives.h"
 #include "pstsdk/util/util.h"
-#include "duckdb/common/open_file_info.hpp"
 
 namespace intellekt::duckpst {
 

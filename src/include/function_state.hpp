@@ -1,7 +1,5 @@
 #pragma once
 
-#include "duckdb.hpp"
-
 #include "duckdb/common/typedefs.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "table_function.hpp"
@@ -78,6 +76,7 @@ typedef vector<node_id>::iterator node_id_iterator;
 template <typename t>
 class PSTReadRowSpoolerState : public PSTReadLocalState {
 	t current_item();
+	node_id current_node_id();
 
 protected:
 	std::optional<node_id_iterator> current;

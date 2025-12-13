@@ -1,8 +1,7 @@
-#include "row_serializer.hpp"
 #include "function_state.hpp"
-#include "pstsdk/pst/message.h"
-#include "pstsdk/util/util.h"
+#include "row_serializer.hpp"
 #include "schema.hpp"
+
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/logging/logger.hpp"
@@ -10,7 +9,10 @@
 #include "pstsdk/ltp/propbag.h"
 #include "pstsdk/mapitags.h"
 #include "pstsdk/pst/folder.h"
+#include "pstsdk/pst/message.h"
 #include "pstsdk/util/primitives.h"
+#include "pstsdk/util/util.h"
+
 #include <cstdint>
 #include <type_traits>
 
@@ -79,7 +81,9 @@ duckdb::Value from_prop_stream(const LogicalType &t, pstsdk::const_property_obje
 
 	auto prop_type = bag.get_prop_type(prop);
 	auto stream = bag.open_prop_stream(prop);
-	if (prop_type == pstsdk::prop_type_wstring && (read_size_bytes % 2) != 0)
+
+	// TODO: shitty force align for wchar, have to do it because some PST writers lie about the type
+	if ((read_size_bytes % 2) != 0)
 		++read_size_bytes;
 
 	vector<pstsdk::byte> buf(read_size_bytes);
@@ -102,39 +106,45 @@ duckdb::Value from_prop_stream(const LogicalType &t, pstsdk::const_property_obje
 template <>
 duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, pstsdk::attachment attachment) {
 	auto attachment_prop_bag = attachment.get_property_bag();
-	vector<Value> values;
+	vector<Value> values(StructType::GetChildCount(t), Value(nullptr));
 
-	values.emplace_back(from_prop<std::string>(
-	    StructType::GetChildType(t, static_cast<int>(schema::AttachmentProjection::attach_content_id)),
-	    attachment_prop_bag, PR_ATTACH_CONTENT_ID));
-	values.emplace_back(
-	    from_prop<int32_t>(StructType::GetChildType(t, static_cast<int>(schema::AttachmentProjection::attach_method)),
-	                       attachment_prop_bag, PR_ATTACH_METHOD));
-	values.emplace_back(
-	    from_prop<std::string>(StructType::GetChildType(t, static_cast<int>(schema::AttachmentProjection::filename)),
-	                           attachment_prop_bag, PR_ATTACH_FILENAME_A));
-	values.emplace_back(
-	    from_prop<std::string>(StructType::GetChildType(t, static_cast<int>(schema::AttachmentProjection::mime_type)),
-	                           attachment_prop_bag, PR_ATTACH_MIME_TAG_A));
+	for (idx_t col = 0; col < values.size(); ++col) {
+		auto &col_type = StructType::GetChildType(t, col);
 
-	if (attachment_prop_bag.prop_exists(PR_ATTACH_DATA_BIN)) {
-		values.emplace_back(Value::UBIGINT(attachment.content_size()));
-	} else {
-		values.emplace_back(Value(nullptr));
-	}
-
-	values.emplace_back(Value::BOOLEAN(attachment.is_message()));
-
-	// when ATTACH_BY_VALUE
-	// TODO: support the other attach methods
-	// https://stackoverflow.com/a/4693174
-	if (attachment_prop_bag.prop_exists(PR_ATTACH_DATA_BIN) && !attachment.is_message() &&
-	    attachment.content_size() > 0 && local_state.global_state.bind_data.read_attachment_body()) {
-		values.emplace_back(from_prop<std::vector<pstsdk::byte>>(
-		    StructType::GetChildType(t, static_cast<int>(schema::AttachmentProjection::bytes)), attachment_prop_bag,
-		    PR_ATTACH_DATA_BIN));
-	} else {
-		values.emplace_back(Value(nullptr));
+		switch (col) {
+		case static_cast<int>(schema::AttachmentProjection::attach_content_id):
+			values[col] = from_prop<std::string>(col_type, attachment_prop_bag, PR_ATTACH_CONTENT_ID);
+			break;
+		case static_cast<int>(schema::AttachmentProjection::attach_method):
+			values[col] = from_prop<int32_t>(col_type, attachment_prop_bag, PR_ATTACH_METHOD);
+			break;
+		case static_cast<int>(schema::AttachmentProjection::filename):
+			values[col] = from_prop<std::string>(col_type, attachment_prop_bag, PR_ATTACH_FILENAME_A);
+			break;
+		case static_cast<int>(schema::AttachmentProjection::mime_type):
+			values[col] = from_prop<std::string>(col_type, attachment_prop_bag, PR_ATTACH_MIME_TAG_A);
+			break;
+		case static_cast<int>(schema::AttachmentProjection::size):
+			if (!attachment_prop_bag.prop_exists(PR_ATTACH_DATA_BIN))
+				break;
+			values[col] = Value::UBIGINT(attachment.content_size());
+			break;
+		case static_cast<int>(schema::AttachmentProjection::is_message):
+			if (!attachment_prop_bag.prop_exists(PR_ATTACH_METHOD))
+				break;
+			values[col] = Value::BOOLEAN(attachment.is_message());
+			break;
+		case static_cast<int>(schema::AttachmentProjection::bytes):
+			if (!attachment_prop_bag.prop_exists(PR_ATTACH_METHOD) ||
+			    !attachment_prop_bag.prop_exists(PR_ATTACH_DATA_BIN) || attachment.is_message() ||
+			    attachment.content_size() <= 0 || !local_state.global_state.bind_data.read_attachment_body()) {
+				break;
+			}
+			values[col] = from_prop<std::vector<pstsdk::byte>>(col_type, attachment_prop_bag, PR_ATTACH_DATA_BIN);
+			break;
+		default:
+			set_common_struct_fields(values, attachment_prop_bag, col_type, col);
+		}
 	}
 
 	return Value::STRUCT(t, values);
@@ -143,56 +153,51 @@ duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, 
 template <>
 duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, pstsdk::recipient recipient) {
 	auto recipient_prop_bag = recipient.get_property_row();
-	vector<Value> values;
+	vector<Value> values(StructType::GetChildCount(t), Value(nullptr));
 
-	set_common_struct_fields(values, recipient_prop_bag);
+	for (idx_t col = 0; col < values.size(); ++col) {
+		auto &col_type = StructType::GetChildType(t, col);
 
-	values.emplace_back(
-	    from_prop<std::string>(StructType::GetChildType(t, static_cast<int>(schema::RecipientProjection::account_name)),
-	                           recipient_prop_bag, PR_ACCOUNT_A));
-	values.emplace_back(from_prop<std::string>(
-	    StructType::GetChildType(t, static_cast<int>(schema::RecipientProjection::email_address)), recipient_prop_bag,
-	    PR_EMAIL_ADDRESS_A));
-	values.emplace_back(
-	    from_prop<std::string>(StructType::GetChildType(t, static_cast<int>(schema::RecipientProjection::address_type)),
-	                           recipient_prop_bag, PR_ADDRTYPE_A));
-	values.emplace_back(
-	    from_prop<int32_t>(StructType::GetChildType(t, static_cast<int>(schema::RecipientProjection::recipient_type)),
-	                       recipient_prop_bag, PR_RECIPIENT_TYPE));
-	values.emplace_back(from_prop<int32_t>(
-	    StructType::GetChildType(t, static_cast<int>(schema::RecipientProjection::recipient_type_raw)),
-	    recipient_prop_bag, PR_RECIPIENT_TYPE));
-
+		switch (col) {
+		case static_cast<int>(schema::RecipientProjection::account_name):
+			values[col] = from_prop<std::string>(col_type, recipient_prop_bag, PR_ACCOUNT_A);
+			break;
+		case static_cast<int>(schema::RecipientProjection::email_address):
+			values[col] = from_prop<std::string>(col_type, recipient_prop_bag, PR_EMAIL_ADDRESS_A);
+			break;
+		case static_cast<int>(schema::RecipientProjection::address_type):
+			values[col] = from_prop<std::string>(col_type, recipient_prop_bag, PR_ADDRTYPE_A);
+			break;
+		case static_cast<int>(schema::RecipientProjection::recipient_type):
+			values[col] = from_prop<int32_t>(col_type, recipient_prop_bag, PR_RECIPIENT_TYPE);
+			break;
+		case static_cast<int>(schema::RecipientProjection::recipient_type_raw):
+			values[col] = from_prop<int32_t>(col_type, recipient_prop_bag, PR_RECIPIENT_TYPE);
+			break;
+		default:
+			set_common_struct_fields(values, recipient_prop_bag, col_type, col);
+		}
+	}
 	return Value::STRUCT(t, values);
 }
 
-void set_common_struct_fields(vector<Value> &values, pstsdk::const_property_object &bag) {
-	for (idx_t col = 0; col < static_cast<int>(schema::CommonProjection::NUM_FIELDS); ++col) {
-		auto col_type = StructType::GetChildType(schema::COMMON_SCHEMA, col);
-
-		switch (col) {
-			break;
-		case static_cast<int>(schema::CommonProjection::entry_id):
-			values.emplace_back(from_prop<std::vector<pstsdk::byte>>(col_type, bag, PR_ENTRYID));
-			break;
-		case static_cast<int>(schema::CommonProjection::parent_entry_id):
-			values.emplace_back(from_prop<std::vector<pstsdk::byte>>(col_type, bag, PR_PARENT_ENTRYID));
-			break;
-		case static_cast<int>(schema::CommonProjection::display_name):
-			values.emplace_back(from_prop<std::string>(col_type, bag, PR_DISPLAY_NAME_A));
-			break;
-		case static_cast<int>(schema::CommonProjection::comment):
-			values.emplace_back(from_prop<std::string>(col_type, bag, PR_COMMENT_A));
-			break;
-		case static_cast<int>(schema::CommonProjection::creation_time):
-			values.emplace_back(from_prop<pstsdk::ulonglong>(col_type, bag, PR_CREATION_TIME));
-			break;
-		case static_cast<int>(schema::CommonProjection::last_modified):
-			values.emplace_back(from_prop<pstsdk::ulonglong>(col_type, bag, PR_LAST_MODIFICATION_TIME));
-			break;
-		default:
-			break;
-		}
+void set_common_struct_fields(vector<Value> &values, pstsdk::const_property_object &bag, const LogicalType &col_type,
+                              idx_t col) {
+	switch (col) {
+	case static_cast<int>(schema::CommonProjection::display_name):
+		values[col] = from_prop<std::string>(col_type, bag, PR_DISPLAY_NAME_A);
+		break;
+	case static_cast<int>(schema::CommonProjection::comment):
+		values[col] = from_prop<std::string>(col_type, bag, PR_COMMENT_A);
+		break;
+	case static_cast<int>(schema::CommonProjection::creation_time):
+		values[col] = from_prop<pstsdk::ulonglong>(col_type, bag, PR_CREATION_TIME);
+		break;
+	case static_cast<int>(schema::CommonProjection::last_modified):
+		values[col] = from_prop<pstsdk::ulonglong>(col_type, bag, PR_LAST_MODIFICATION_TIME);
+		break;
+	default:
+		break;
 	}
 }
 
@@ -200,37 +205,61 @@ template <>
 void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::const_property_object &bag,
                        idx_t row_number, idx_t column_index) {
 	auto schema_col = local_state.column_ids()[column_index];
-	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 	auto &pst_bag = local_state.pst->get_property_bag();
+	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 
 	switch (schema_col) {
-	case static_cast<int>(schema::CommonWithPSTProjection::pst_path):
+	case static_cast<int>(schema::PSTCommonChildren::pst_path):
 		output.SetValue(column_index, row_number, Value(local_state.partition->file.path));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::pst_name):
+	case static_cast<int>(schema::PSTCommonChildren::pst_name):
 		output.SetValue(
 		    column_index, row_number,
 		    from_prop<std::string>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_DISPLAY_NAME_A));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::entry_id):
-		output.SetValue(column_index, row_number, from_prop<std::vector<pstsdk::byte>>(col_type, bag, PR_ENTRYID));
+	case static_cast<int>(schema::PSTCommonChildren::record_key):
+		output.SetValue(
+		    column_index, row_number,
+		    from_prop<std::vector<pstsdk::byte>>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_RECORD_KEY));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::parent_entry_id):
-		output.SetValue(column_index, row_number,
-		                from_prop<std::vector<pstsdk::byte>>(col_type, bag, PR_PARENT_ENTRYID));
-		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::display_name):
+	case static_cast<int>(schema::PSTCommonChildren::display_name):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, bag, PR_DISPLAY_NAME_A));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::comment):
+	case static_cast<int>(schema::PSTCommonChildren::comment):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, bag, PR_COMMENT_A));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::creation_time):
+	case static_cast<int>(schema::PSTCommonChildren::creation_time):
 		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, bag, PR_CREATION_TIME));
 		break;
-	case static_cast<int>(schema::CommonWithPSTProjection::last_modified):
+	case static_cast<int>(schema::PSTCommonChildren::last_modified):
 		output.SetValue(column_index, row_number,
 		                from_prop<pstsdk::ulonglong>(col_type, bag, PR_LAST_MODIFICATION_TIME));
+		break;
+	default:
+		break;
+	}
+}
+
+template <>
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::pst &pst, idx_t row_number,
+                       idx_t column_index) {
+	auto schema_col = local_state.column_ids()[column_index];
+	auto &pst_bag = pst.get_property_bag();
+	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
+
+	switch (schema_col) {
+	case static_cast<int>(schema::PSTProjection::pst_path):
+		output.SetValue(column_index, row_number, Value(local_state.partition->file.path));
+		break;
+	case static_cast<int>(schema::PSTProjection::pst_name):
+		output.SetValue(
+		    column_index, row_number,
+		    from_prop<std::string>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_DISPLAY_NAME_A));
+		break;
+	case static_cast<int>(schema::PSTProjection::record_key):
+		output.SetValue(
+		    column_index, row_number,
+		    from_prop<std::vector<pstsdk::byte>>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_RECORD_KEY));
 		break;
 	default:
 		break;
@@ -243,13 +272,9 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	auto &prop_bag = msg.get_property_bag();
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
-
 	auto read_size = local_state.global_state.bind_data.max_body_size_bytes();
 
 	switch (schema_col) {
-	case static_cast<int>(schema::MessageProjection::message_id):
-		output.SetValue(column_index, row_number, Value::UBIGINT(msg.get_id()));
-		break;
 	case static_cast<int>(schema::MessageProjection::subject):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_SUBJECT_A));
 		break;
@@ -290,6 +315,11 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		break;
 	}
 	case static_cast<int>(schema::MessageProjection::body):
+		if (!prop_bag.prop_exists(PR_BODY_A)) {
+			output.SetValue(column_index, row_number, Value(nullptr));
+			return;
+		}
+
 		if (read_size == 0)
 			read_size = msg.body_size();
 		read_size = std::min<idx_t>(read_size, msg.body_size());
@@ -297,6 +327,11 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		                from_prop_stream<std::string>(col_type, prop_bag, PR_BODY_A, read_size));
 		break;
 	case static_cast<int>(schema::MessageProjection::body_html):
+		if (!prop_bag.prop_exists(PR_HTML)) {
+			output.SetValue(column_index, row_number, Value(nullptr));
+			return;
+		}
+
 		if (read_size == 0)
 			read_size = msg.html_body_size();
 		read_size = std::min<idx_t>(read_size, msg.html_body_size());
@@ -349,23 +384,20 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 
 	switch (schema_col) {
-	case static_cast<int>(schema::FolderProjection::parent_folder_id):
-		output.SetValue(schema_col, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
+	case static_cast<int>(schema::FolderProjection::display_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_DISPLAY_NAME_A));
 		break;
-	case static_cast<int>(schema::FolderProjection::folder_id):
-		output.SetValue(schema_col, row_number, Value::UINTEGER(folder.get_id()));
-		break;
-	case static_cast<int>(schema::FolderProjection::folder_name):
-		output.SetValue(schema_col, row_number, from_prop<std::string>(col_type, prop_bag, PR_DISPLAY_NAME_A));
+	case static_cast<int>(schema::FolderProjection::parent_node_id):
+		output.SetValue(column_index, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
 		break;
 	case static_cast<int>(schema::FolderProjection::subfolder_count):
-		output.SetValue(schema_col, row_number, Value::UINTEGER(folder.get_subfolder_count()));
+		output.SetValue(column_index, row_number, Value::UINTEGER(folder.get_subfolder_count()));
 		break;
 	case static_cast<int>(schema::FolderProjection::message_count):
-		output.SetValue(schema_col, row_number, Value::BIGINT(folder.get_message_count()));
+		output.SetValue(column_index, row_number, Value::BIGINT(folder.get_message_count()));
 		break;
 	case static_cast<int>(schema::FolderProjection::unread_message_count):
-		output.SetValue(schema_col, row_number, Value::BIGINT(folder.get_unread_message_count()));
+		output.SetValue(column_index, row_number, Value::BIGINT(folder.get_unread_message_count()));
 		break;
 	default:
 		break;
@@ -375,26 +407,42 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 template <typename Item>
 void into_row(PSTReadLocalState &local_state, DataChunk &output, Item &item, idx_t row_number) {
 	for (idx_t col_idx = 0; col_idx < local_state.column_ids().size(); ++col_idx) {
-		try {
-			// TODO: easier to do this here for now to not forget to bind common columns
-			if constexpr (std::is_same_v<Item, pstsdk::message>) {
-				auto &prop_bag = item.get_property_bag();
-				set_output_column<const_property_object>(local_state, output, prop_bag, row_number, col_idx);
-			} else if constexpr (std::is_same_v<Item, pstsdk::folder>) {
-				auto &prop_bag = item.get_property_bag();
-				set_output_column<const_property_object>(local_state, output, prop_bag, row_number, col_idx);
+		auto schema_col = local_state.column_ids()[col_idx];
+
+		// Bind virtual columns + node_id (should be 'infallible' as long as the file isn't borked)
+		switch (schema_col) {
+		case schema::PST_ITEM_NODE_ID:
+			output.SetValue(col_idx, row_number, Value::UINTEGER(item.get_id()));
+			break;
+		case schema::PST_PARTITION_INDEX:
+			output.SetValue(col_idx, row_number, Value::UBIGINT(local_state.partition->partition_index));
+			break;
+		case static_cast<int>(schema::PSTProjection::node_id):
+			output.SetValue(col_idx, row_number, Value::UINTEGER(item.get_id()));
+			break;
+		default:
+			try {
+				// Bind PST attributes
+				set_output_column<pstsdk::pst>(local_state, output, *local_state.pst, row_number, col_idx);
+
+				// Bind common columns (message only)
+				if constexpr (std::is_same_v<Item, pstsdk::message>) {
+					set_output_column<const_property_object>(local_state, output,
+					                                         static_cast<pstsdk::message>(item).get_property_bag(),
+					                                         row_number, col_idx);
+				}
+
+				set_output_column<Item>(local_state, output, item, row_number, col_idx);
+			} catch (std::exception &e) {
+				auto schema_col = local_state.column_ids()[col_idx];
+				auto &output_schema = local_state.output_schema();
+
+				DUCKDB_LOG_ERROR(local_state.ec, "Failed to read column: %s (%s)\nError: %s",
+				                 StructType::GetChildName(output_schema, schema_col),
+				                 StructType::GetChildType(output_schema, schema_col).ToString(), e.what());
+
+				output.SetValue(col_idx, row_number, Value(nullptr));
 			}
-
-			set_output_column<Item>(local_state, output, item, row_number, col_idx);
-		} catch (std::exception &e) {
-			auto schema_col = local_state.column_ids()[col_idx];
-			auto &output_schema = local_state.output_schema();
-
-			DUCKDB_LOG_ERROR(local_state.ec, "Failed to read column: %s (%s)\nError: %s",
-			                 StructType::GetChildName(output_schema, schema_col),
-			                 StructType::GetChildType(output_schema, schema_col).ToString(), e.what());
-
-			output.SetValue(col_idx, row_number, Value(nullptr));
 		}
 	}
 }

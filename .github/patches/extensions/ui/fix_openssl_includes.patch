@@ -1,0 +1,25 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1111111..2222222 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -12,7 +12,10 @@ find_package(OpenSSL REQUIRED)
+ set(EXTENSION_NAME ${TARGET_NAME}_extension)
+
+ project(${TARGET_NAME})
+-include_directories(src/include ${PROJECT_SOURCE_DIR}/third_party/httplib)
++
++# Add OpenSSL include dirs before httplib to ensure headers are found
++include_directories(${OPENSSL_INCLUDE_DIR})
++include_directories(src/include ${PROJECT_SOURCE_DIR}/third_party/httplib)
+
+ set(EXTENSION_SOURCES
+     src/event_dispatcher.cpp
+@@ -58,6 +61,7 @@ add_definitions(-DUI_EXTENSION_GIT_SHA="${UI_EXTENSION_GIT_SHA}")
+ build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
+ build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
+
+ target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
++target_link_libraries(${TARGET_NAME}_loadable_extension OpenSSL::SSL OpenSSL::Crypto)
+
+ install(
+   TARGETS ${EXTENSION_NAME}

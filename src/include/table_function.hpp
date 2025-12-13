@@ -1,18 +1,22 @@
 #pragma once
 
+#include "schema.hpp"
+
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/open_file_info.hpp"
+#include "duckdb/common/table_column.hpp"
 #include "duckdb/common/types.hpp"
+#include "duckdb/common/types/data_chunk.hpp"
 #include "duckdb/common/vector_size.hpp"
 #include "duckdb/execution/execution_context.hpp"
 #include "duckdb/function/function.hpp"
 #include "duckdb/function/partition_stats.hpp"
 #include "duckdb/function/table_function.hpp"
-#include "duckdb/common/types/data_chunk.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/storage/statistics/node_statistics.hpp"
-#include "schema.hpp"
+
 #include <pstsdk/pst.h>
+
 #include <boost/iterator/zip_iterator.hpp>
 #include <boost/range/combine.hpp>
 #include <boost/thread/synchronized_value.hpp>
@@ -44,24 +48,29 @@ static const map<string, PSTReadFunctionMode> FUNCTIONS = {
 
 static const named_parameter_type_map_t NAMED_PARAMETERS = {{"max_body_size_bytes", LogicalType::UBIGINT},
                                                             {"partition_size", LogicalType::UBIGINT},
-                                                            {"read_attachment_body", LogicalType::BOOLEAN}};
+                                                            {"read_attachment_body", LogicalType::BOOLEAN},
+                                                            {"read_limit", LogicalType::UBIGINT}};
 
 /**
  * A PST read as expressed by node IDs in a file
  */
 struct PSTInputPartition {
+	const idx_t partition_index;
+	const shared_ptr<pstsdk::pst> pst;
 	const OpenFileInfo file;
 	const PSTReadFunctionMode mode;
-	const PartitionStatistics stats;
+	PartitionStatistics stats;
 	vector<node_id> nodes;
 
-	PSTInputPartition(const OpenFileInfo file, const PSTReadFunctionMode mode, const vector<node_id> &&nodes,
-	                  const PartitionStatistics &&stats);
+	PSTInputPartition(const idx_t partition_index, const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file,
+	                  const PSTReadFunctionMode mode, const PartitionStatistics stats, const vector<node_id> &&nodes);
+	PSTInputPartition(const PSTInputPartition &other_partition);
 };
 
 struct PSTReadTableFunctionData : public TableFunctionData {
 	vector<OpenFileInfo> files;
 	vector<PSTInputPartition> partitions;
+
 	duckdb::named_parameter_map_t named_parameters;
 
 public:
@@ -77,10 +86,13 @@ public:
 	PSTReadTableFunctionData(ClientContext &ctx, const string &&path, const PSTReadFunctionMode mode,
 	                         duckdb::named_parameter_map_t &named_parameters);
 
+	PSTReadTableFunctionData(const PSTReadTableFunctionData &other_data);
+
 	// Parameters
 	const idx_t partition_size() const;
 	const idx_t max_body_size_bytes() const;
 	const bool read_attachment_body() const;
+	const idx_t read_limit() const;
 
 	/**
 	 * @brief Bind table function output schema based on read mode
@@ -97,6 +109,13 @@ public:
 	 */
 	void plan_input_partitions(ClientContext &ctx);
 
+	/**
+	 * @brief Copy this function data (used by late materialization)
+	 *
+	 * @return unique_ptr<FunctionData>
+	 */
+	unique_ptr<FunctionData> Copy() const override;
+
 private:
 	template <typename T>
 	const T parameter_or_default(const char *parameter_name, T default_value) const;
@@ -112,14 +131,18 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 
 unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const FunctionData *data);
 
-vector<PartitionStatistics> PSTPartitionStats(ClientContext &ctx, GetPartitionStatsInput &input);
-
 TablePartitionInfo PSTPartitionInfo(ClientContext &ctx, TableFunctionPartitionInput &input);
+
+vector<PartitionStatistics> PSTPartitionStats(ClientContext &ctx, GetPartitionStatsInput &input);
 
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
                        const GlobalTableFunctionState *global_state);
 
 InsertionOrderPreservingMap<string> PSTDynamicToString(duckdb::TableFunctionDynamicToStringInput &);
+
+virtual_column_map_t PSTVirtualColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data);
+
+vector<column_t> PSTRowIDColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data);
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output);
 } // namespace intellekt::duckpst
