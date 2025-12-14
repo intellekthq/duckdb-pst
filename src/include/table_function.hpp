@@ -1,6 +1,7 @@
 #pragma once
 
 #include "schema.hpp"
+#include "pst/message.hpp"
 
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/open_file_info.hpp"
@@ -28,12 +29,23 @@ using namespace pstsdk;
 static constexpr idx_t DEFAULT_PARTITION_SIZE = DEFAULT_STANDARD_VECTOR_SIZE * 2;
 static constexpr idx_t DEFAULT_BODY_SIZE_BYTES = 1000000;
 
-enum PSTReadFunctionMode { Folder, Message, NUM_SHAPES };
+/**
+ * @brief Determines output shape and nid filters
+ */
+enum PSTReadFunctionMode {
+	// One for each message class
+	MESSAGE_CLASSES(MESSAGE_CLASS_ENUM)
+	// All messages (contact, appt, etc.) serialized as IPM.Note
+	Message,
+	Folder,
+	NUM_SHAPES
+};
 
 inline const LogicalType &output_schema(const PSTReadFunctionMode &mode) {
 	switch (mode) {
 	case PSTReadFunctionMode::Folder:
 		return schema::FOLDER_SCHEMA;
+	case PSTReadFunctionMode::Note:
 	case PSTReadFunctionMode::Message:
 		return schema::MESSAGE_SCHEMA;
 	default:
@@ -44,6 +56,7 @@ inline const LogicalType &output_schema(const PSTReadFunctionMode &mode) {
 static const map<string, PSTReadFunctionMode> FUNCTIONS = {
     {"read_pst_folders", Folder},
     {"read_pst_messages", Message},
+    {"read_pst_notes", Note},
 };
 
 static const named_parameter_type_map_t NAMED_PARAMETERS = {{"max_body_size_bytes", LogicalType::UBIGINT},

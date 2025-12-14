@@ -1,5 +1,6 @@
 #include "table_function.hpp"
 #include "function_state.hpp"
+#include "pst/message.hpp"
 #include "schema.hpp"
 
 #include "duckdb/common/exception.hpp"
@@ -98,29 +99,55 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 
 		try {
 			auto pst = make_shared_ptr<pstsdk::pst>(pst::dfile::open(ctx, finfo));
-
 			vector<node_id> nodes;
 
-			// TODO
-			switch (mode) {
-			case PSTReadFunctionMode::Folder:
+			if (mode == PSTReadFunctionMode::Folder) {
 				for (pstsdk::pst::folder_filter_iterator it = pst->folder_node_begin(); it != pst->folder_node_end();
 				     ++it) {
 					if (nodes.size() >= limit)
 						break;
 					nodes.emplace_back(it->id);
 				}
-				break;
-			case PSTReadFunctionMode::Message:
+			} else {
 				for (pstsdk::pst::message_filter_iterator it = pst->message_node_begin(); it != pst->message_node_end();
 				     ++it) {
 					if (nodes.size() >= limit)
 						break;
+
+					if (mode == PSTReadFunctionMode::Message) {
+						nodes.emplace_back(it->id);
+						continue;
+					}
+
+					auto klass = pst::message_class(pst->open_message(it->id));
+
+					switch (mode) {
+					case PSTReadFunctionMode::Appointment:
+						if (klass != pst::MessageClass::Appointment)
+							continue;
+						break;
+					case PSTReadFunctionMode::Contact:
+						if (klass != pst::MessageClass::Contact)
+							continue;
+						break;
+					case PSTReadFunctionMode::Note:
+						if (klass != pst::MessageClass::Note)
+							continue;
+						break;
+					case PSTReadFunctionMode::StickyNote:
+						if (klass != pst::MessageClass::StickyNote)
+							continue;
+						break;
+					case PSTReadFunctionMode::Task:
+						if (klass != pst::MessageClass::Task)
+							continue;
+						break;
+					default:
+						break;
+					}
+
 					nodes.emplace_back(it->id);
 				}
-				break;
-			default:
-				break;
 			}
 
 			while (!nodes.empty()) {
@@ -179,15 +206,11 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 	case PSTReadFunctionMode::Folder:
 		local_state = make_uniq<PSTReadRowSpoolerState<folder>>(global_state, ec);
 		break;
-	case PSTReadFunctionMode::Message:
-		local_state = make_uniq<PSTReadRowSpoolerState<message>>(global_state, ec);
-		break;
 	default:
+		local_state = make_uniq<PSTReadRowSpoolerState<message>>(global_state, ec);
 		break;
 	}
 
-	if (!local_state)
-		return nullptr;
 	return local_state;
 }
 
