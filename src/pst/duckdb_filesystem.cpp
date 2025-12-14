@@ -1,12 +1,12 @@
 #include "duckdb/common/file_open_flags.hpp"
 #include "duckdb/logging/logger.hpp"
 #include "duckdb/main/client_context.hpp"
-#include "pstsdk_duckdb_filesystem.hpp"
+#include "pst/duckdb_filesystem.hpp"
 #include "pstsdk/util/util.h"
 
 #include <memory>
 
-namespace intellekt::duckpst {
+namespace intellekt::duckpst::pst {
 using namespace duckdb;
 
 dfile::dfile(ClientContext &ctx, const OpenFileInfo &file) : pstsdk::file() {
@@ -30,4 +30,4 @@ std::shared_ptr<pstsdk::file> dfile::open(duckdb::ClientContext &ctx, const duck
 	return std::make_shared<dfile>(ctx, finfo);
 }
 
-} // namespace intellekt::duckpst
+} // namespace intellekt::duckpst::pst

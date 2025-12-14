@@ -1,5 +1,5 @@
 #include "function_state.hpp"
-#include "pstsdk_duckdb_filesystem.hpp"
+#include "pst/duckdb_filesystem.hpp"
 #include "row_serializer.hpp"
 #include "table_function.hpp"
 

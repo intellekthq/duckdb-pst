@@ -18,7 +18,7 @@
 #include "duckdb/main/client_data.hpp"
 #include "duckdb/storage/statistics/node_statistics.hpp"
 
-#include "pstsdk_duckdb_filesystem.hpp"
+#include "pst/duckdb_filesystem.hpp"
 #include "pstsdk/pst/pst.h"
 #include "pstsdk/pst/folder.h"
 
@@ -97,7 +97,7 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
 			break;
 
 		try {
-			auto pst = make_shared_ptr<pstsdk::pst>(dfile::open(ctx, finfo));
+			auto pst = make_shared_ptr<pstsdk::pst>(pst::dfile::open(ctx, finfo));
 
 			vector<node_id> nodes;
 
