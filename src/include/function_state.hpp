@@ -2,6 +2,7 @@
 
 #include "duckdb/common/typedefs.hpp"
 #include "duckdb/function/table_function.hpp"
+#include "pst/typed_bag.hpp"
 #include "table_function.hpp"
 
 #include <boost/thread/synchronized_value.hpp>
@@ -29,6 +30,8 @@ public:
 	idx_t MaxThreads() const override;
 };
 
+typedef vector<node_id>::iterator node_id_iterator;
+
 /**
  * The local (per-thread) read state spools node_ids out of a partition,
  * asking for a new one after all nodes have been output.
@@ -36,6 +39,9 @@ public:
 class PSTReadLocalState : public LocalTableFunctionState {
 protected:
 	PSTReadLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec);
+
+	std::optional<node_id_iterator> current;
+	std::optional<node_id_iterator> end;
 
 	/**
 	 * @brief Dequeue a partition from global state
@@ -45,47 +51,14 @@ protected:
 	 */
 	bool bind_partition();
 
+	bool bind_next();
+
 public:
 	ExecutionContext &ec;
 	PSTReadGlobalState &global_state;
 
 	std::optional<pstsdk::pst> pst;
 	std::optional<PSTInputPartition> partition;
-
-	/**
-	 * @brief Spools rows into DataChunk
-	 *
-	 * @param output Current data chunk
-	 * @return idx_t Number of rows
-	 */
-	virtual idx_t emit_rows(DataChunk &output) {
-		return 0;
-	}
-
-	const vector<column_t> &column_ids();
-	const LogicalType &output_schema();
-};
-
-typedef vector<node_id>::iterator node_id_iterator;
-
-/**
- * Concrete local state implementation for a specific pstsdk type
- *
- * @tparam t pstsdk item type
- */
-template <typename t>
-class PSTReadRowSpoolerState : public PSTReadLocalState {
-	t current_item();
-	node_id current_node_id();
-
-protected:
-	std::optional<node_id_iterator> current;
-	std::optional<node_id_iterator> end;
-
-	bool bind_next();
-
-public:
-	PSTReadRowSpoolerState(PSTReadGlobalState &global_state, ExecutionContext &ec);
 
 	/**
 	 * @brief Is this partition done?
@@ -96,19 +69,30 @@ public:
 	const bool finished();
 
 	/**
+	 * @brief Spools rows into DataChunk
+	 *
+	 * @param output Current data chunk
+	 * @return idx_t Number of rows
+	 */
+	virtual idx_t emit_rows(DataChunk &output) = 0;
+
+	const vector<column_t> &column_ids();
+	const LogicalType &output_schema();
+};
+
+template <pst::MessageClass V, typename T = pstsdk::message>
+class PSTReadConcreteLocalState : public PSTReadLocalState {
+public:
+	PSTReadConcreteLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec);
+
+	virtual idx_t emit_rows(DataChunk &output) override;
+
+	/**
 	 * @brief Get the next item and move the iterator
 	 *
 	 * @return std::optional<t>
 	 */
-	std::optional<t> next();
-
-	/**
-	 * @brief Concrete row spooler for `t`
-	 *
-	 * @param output
-	 * @return idx_t
-	 */
-	idx_t emit_rows(DataChunk &output) override;
+	std::optional<pst::TypedBag<V, T>> next();
 };
 
 } // namespace intellekt::duckpst

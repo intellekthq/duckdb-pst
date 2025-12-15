@@ -1,6 +1,6 @@
 #include "table_function.hpp"
 #include "function_state.hpp"
-#include "pst/message.hpp"
+#include "pst/typed_bag.hpp"
 #include "schema.hpp"
 
 #include "duckdb/common/exception.hpp"
@@ -126,7 +126,8 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx, OpenFile
 			auto message_node = pst->get_db().get()->lookup_node(id);
 
 			// It really sucks that the only way to determine a message class is by reading and asserting the string.
-			// TODO: Heuristic based on attribute presence (i.e. is chaining a few prop_exists calls faster than the string assert?)
+			// TODO: Heuristic based on attribute presence (i.e. is chaining a few prop_exists calls faster than the
+			// string assert?)
 			auto klass = pst::message_class(*pst, id);
 			switch (mode) {
 			case PSTReadFunctionMode::Appointment:
@@ -242,10 +243,14 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 
 	switch (bind_data.mode) {
 	case PSTReadFunctionMode::Folder:
-		local_state = make_uniq<PSTReadRowSpoolerState<folder>>(global_state, ec);
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Note, pstsdk::folder>>(global_state, ec);
 		break;
+	case PSTReadFunctionMode::Contact:
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Contact>>(global_state, ec);
+		break;
+	case PSTReadFunctionMode::Note:
 	default:
-		local_state = make_uniq<PSTReadRowSpoolerState<message>>(global_state, ec);
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Note>>(global_state, ec);
 		break;
 	}
 

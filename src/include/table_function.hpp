@@ -1,7 +1,7 @@
 #pragma once
 
 #include "schema.hpp"
-#include "pst/message.hpp"
+#include "pst/typed_bag.hpp"
 
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/open_file_info.hpp"

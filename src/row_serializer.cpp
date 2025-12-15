@@ -12,7 +12,7 @@
 #include "pstsdk/pst/message.h"
 #include "pstsdk/util/primitives.h"
 #include "pstsdk/util/util.h"
-#include "pst/message.hpp"
+#include "pst/typed_bag.hpp"
 #include "table_function.hpp"
 
 #include <cstdint>
@@ -105,8 +105,9 @@ duckdb::Value from_prop_stream(const LogicalType &t, pstsdk::const_property_obje
 	return duckdb_value;
 }
 
-template <>
-duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, pstsdk::attachment attachment) {
+template <pst::MessageClass V, typename T>
+duckdb::Value into_struct(PSTReadConcreteLocalState<V, T> &local_state, const LogicalType &t,
+                          pstsdk::attachment attachment) {
 	auto attachment_prop_bag = attachment.get_property_bag();
 	vector<Value> values(StructType::GetChildCount(t), Value(nullptr));
 
@@ -152,8 +153,9 @@ duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, 
 	return Value::STRUCT(t, values);
 }
 
-template <>
-duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, pstsdk::recipient recipient) {
+template <pst::MessageClass V, typename T>
+duckdb::Value into_struct(PSTReadConcreteLocalState<V, T> &local_state, const LogicalType &t,
+                          pstsdk::recipient recipient) {
 	auto recipient_prop_bag = recipient.get_property_row();
 	vector<Value> values(StructType::GetChildCount(t), Value(nullptr));
 
@@ -203,9 +205,9 @@ void set_common_struct_fields(vector<Value> &values, pstsdk::const_property_obje
 	}
 }
 
-template <>
-void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::const_property_object &bag,
-                       idx_t row_number, idx_t column_index) {
+template <pst::MessageClass V>
+void set_output_column(PSTReadConcreteLocalState<V, pstsdk::message> &local_state, duckdb::DataChunk &output,
+                       pstsdk::const_property_object &bag, idx_t row_number, idx_t column_index) {
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &pst_bag = local_state.pst->get_property_bag();
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
@@ -242,9 +244,9 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	}
 }
 
-template <>
-void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::pst &pst, idx_t row_number,
-                       idx_t column_index) {
+template <pst::MessageClass V, typename T>
+void set_output_column(PSTReadConcreteLocalState<V, T> &local_state, duckdb::DataChunk &output, pstsdk::pst &pst,
+                       idx_t row_number, idx_t column_index) {
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &pst_bag = pst.get_property_bag();
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
@@ -269,9 +271,10 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 }
 
 template <>
-void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output,
-                       pst::Message<pst::MessageClass::Note> &msg, idx_t row_number, idx_t column_index) {
-	auto &prop_bag = msg.message.get_property_bag();
+void set_output_column(PSTReadConcreteLocalState<pst::MessageClass::Note, pstsdk::message> &local_state,
+                       duckdb::DataChunk &output, pst::TypedBag<pst::MessageClass::Note> &msg, idx_t row_number,
+                       idx_t column_index) {
+	auto &prop_bag = msg.bag;
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 	auto read_size = local_state.global_state.bind_data.max_body_size_bytes();
@@ -304,15 +307,15 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_MESSAGE_FLAGS));
 		break;
 	case static_cast<int>(schema::MessageProjection::message_size):
-		output.SetValue(column_index, row_number, Value::UBIGINT(msg.message.size()));
+		output.SetValue(column_index, row_number, Value::UBIGINT(msg.sdk_object->size()));
 		break;
 	case static_cast<int>(schema::MessageProjection::has_attachments): {
-		size_t attachment_count = msg.message.get_attachment_count();
+		size_t attachment_count = msg.sdk_object->get_attachment_count();
 		output.SetValue(column_index, row_number, Value::BOOLEAN(attachment_count > 0));
 		break;
 	}
 	case static_cast<int>(schema::MessageProjection::attachment_count): {
-		size_t attachment_count = msg.message.get_attachment_count();
+		size_t attachment_count = msg.sdk_object->get_attachment_count();
 		output.SetValue(column_index, row_number, Value::UBIGINT(attachment_count));
 		break;
 	}
@@ -323,8 +326,8 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		}
 
 		if (read_size == 0)
-			read_size = msg.message.body_size();
-		read_size = std::min<idx_t>(read_size, msg.message.body_size());
+			read_size = msg.sdk_object->body_size();
+		read_size = std::min<idx_t>(read_size, msg.sdk_object->body_size());
 		output.SetValue(column_index, row_number,
 		                from_prop_stream<std::string>(col_type, prop_bag, PR_BODY_A, read_size));
 		break;
@@ -335,8 +338,8 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		}
 
 		if (read_size == 0)
-			read_size = msg.message.html_body_size();
-		read_size = std::min<idx_t>(read_size, msg.message.html_body_size());
+			read_size = msg.sdk_object->html_body_size();
+		read_size = std::min<idx_t>(read_size, msg.sdk_object->html_body_size());
 		output.SetValue(column_index, row_number,
 		                from_prop_stream<std::string>(col_type, prop_bag, PR_HTML, read_size));
 		break;
@@ -348,7 +351,7 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		break;
 	case static_cast<int>(schema::MessageProjection::recipients): {
 		vector<Value> recipients;
-		for (auto it = msg.message.recipient_begin(); it != msg.message.recipient_end(); ++it) {
+		for (auto it = msg.sdk_object->recipient_begin(); it != msg.sdk_object->recipient_end(); ++it) {
 			try {
 				recipients.emplace_back(into_struct(local_state, schema::RECIPIENT_SCHEMA, *it));
 			} catch (std::exception &e) {
@@ -361,7 +364,7 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	}
 	case static_cast<int>(schema::MessageProjection::attachments): {
 		vector<Value> attachments;
-		for (auto it = msg.message.attachment_begin(); it != msg.message.attachment_end(); ++it) {
+		for (auto it = msg.sdk_object->attachment_begin(); it != msg.sdk_object->attachment_end(); ++it) {
 			try {
 				attachments.emplace_back(into_struct(local_state, schema::ATTACHMENT_SCHEMA, *it));
 			} catch (std::exception &e) {
@@ -379,9 +382,9 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 }
 
 template <>
-void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output,
-                       pst::Message<pst::MessageClass::Contact> &msg, idx_t row_number, idx_t column_index) {
-	auto &prop_bag = msg.message.get_property_bag();
+void set_output_column(PSTReadConcreteLocalState<pst::MessageClass::Contact> &local_state, duckdb::DataChunk &output,
+                       pst::TypedBag<pst::MessageClass::Contact> &contact, idx_t row_number, idx_t column_index) {
+	auto &prop_bag = contact.bag;
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 
@@ -651,9 +654,10 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 }
 
 template <>
-void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::folder &folder,
+void set_output_column(PSTReadConcreteLocalState<pst::MessageClass::Note, pstsdk::folder> &local_state,
+                       duckdb::DataChunk &output, pst::TypedBag<pst::MessageClass::Note, pstsdk::folder> &folder,
                        idx_t row_number, idx_t column_index) {
-	auto &prop_bag = folder.get_property_bag();
+	auto &prop_bag = folder.bag;
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 
@@ -665,65 +669,46 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		output.SetValue(column_index, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
 		break;
 	case static_cast<int>(schema::FolderProjection::subfolder_count):
-		output.SetValue(column_index, row_number, Value::UINTEGER(folder.get_subfolder_count()));
+		output.SetValue(column_index, row_number, Value::UINTEGER(folder.sdk_object->get_subfolder_count()));
 		break;
 	case static_cast<int>(schema::FolderProjection::message_count):
-		output.SetValue(column_index, row_number, Value::BIGINT(folder.get_message_count()));
+		output.SetValue(column_index, row_number, Value::BIGINT(folder.sdk_object->get_message_count()));
 		break;
 	case static_cast<int>(schema::FolderProjection::unread_message_count):
-		output.SetValue(column_index, row_number, Value::BIGINT(folder.get_unread_message_count()));
+		output.SetValue(column_index, row_number, Value::BIGINT(folder.sdk_object->get_unread_message_count()));
 		break;
 	default:
 		break;
 	}
 }
 
-template <typename Item>
-void into_row(PSTReadLocalState &local_state, DataChunk &output, Item &item, idx_t row_number) {
+template <pst::MessageClass V, typename T>
+void into_row(PSTReadConcreteLocalState<V, T> &local_state, duckdb::DataChunk &output, pst::TypedBag<V, T> &item,
+              idx_t row_number) {
 	for (idx_t col_idx = 0; col_idx < local_state.column_ids().size(); ++col_idx) {
 		auto schema_col = local_state.column_ids()[col_idx];
 
 		// Bind virtual columns + node_id (should be 'infallible' as long as the file isn't borked)
 		switch (schema_col) {
+		case static_cast<int>(schema::PSTProjection::node_id):
 		case schema::PST_ITEM_NODE_ID:
-			output.SetValue(col_idx, row_number, Value::UINTEGER(item.get_id()));
+			output.SetValue(col_idx, row_number, Value::UINTEGER(item.node.get_id()));
 			break;
 		case schema::PST_PARTITION_INDEX:
 			output.SetValue(col_idx, row_number, Value::UBIGINT(local_state.partition->partition_index));
 			break;
-		case static_cast<int>(schema::PSTProjection::node_id):
-			output.SetValue(col_idx, row_number, Value::UINTEGER(item.get_id()));
-			break;
 		default:
 			try {
 				// Bind PST attributes
-				set_output_column<pstsdk::pst>(local_state, output, *local_state.pst, row_number, col_idx);
+				set_output_column<V, T, pstsdk::pst>(local_state, output, *local_state.pst, row_number, col_idx);
 
-				if constexpr (std::is_same_v<Item, pstsdk::message>) {
+				// If message-like, bind common message attributes
+				if constexpr (std::is_same_v<T, pstsdk::message>) {
 					// Bind common columns (message only)
-					set_output_column<const_property_object>(local_state, output, item.get_property_bag(), row_number,
-					                                         col_idx);
-					switch (local_state.partition->mode) {
-					case PSTReadFunctionMode::Note:
-					case PSTReadFunctionMode::Message: {
-						auto concrete = pst::Message<pst::MessageClass::Note>(*local_state.pst, item);
-						set_output_column<pst::Message<pst::MessageClass::Note>>(local_state, output, concrete,
-						                                                         row_number, col_idx);
-						break;
-					}
-					case PSTReadFunctionMode::Contact: {
-						auto concrete = pst::Message<pst::MessageClass::Contact>(*local_state.pst, item);
-						set_output_column<pst::Message<pst::MessageClass::Contact>>(local_state, output, concrete,
-						                                                            row_number, col_idx);
-						break;
-					}
-					default:
-						break;
-					}
-				} else if constexpr (std::is_same_v<Item, pstsdk::folder>) {
-					set_output_column<Item>(local_state, output, item, row_number, col_idx);
+					set_output_column<V, T, const_property_object>(local_state, output, item.bag, row_number, col_idx);
 				}
 
+				set_output_column(local_state, output, item, row_number, col_idx);
 			} catch (std::exception &e) {
 				auto schema_col = local_state.column_ids()[col_idx];
 				auto &output_schema = local_state.output_schema();
@@ -738,7 +723,15 @@ void into_row(PSTReadLocalState &local_state, DataChunk &output, Item &item, idx
 	}
 }
 
-template void into_row<pstsdk::folder>(PSTReadLocalState &, DataChunk &, pstsdk::folder &, idx_t);
-template void into_row<pstsdk::message>(PSTReadLocalState &, DataChunk &, pstsdk::message &, idx_t);
+template void into_row<pst::MessageClass::Contact>(PSTReadConcreteLocalState<pst::MessageClass::Contact> &local_state,
+                                                   duckdb::DataChunk &output,
+                                                   pst::TypedBag<pst::MessageClass::Contact> &item, idx_t row_number);
+template void into_row<pst::MessageClass::Note>(PSTReadConcreteLocalState<pst::MessageClass::Note> &local_state,
+                                                duckdb::DataChunk &output, pst::TypedBag<pst::MessageClass::Note> &item,
+                                                idx_t row_number);
+
+template void into_row<pst::MessageClass::Note, pstsdk::folder>(
+    PSTReadConcreteLocalState<pst::MessageClass::Note, pstsdk::folder> &local_state, duckdb::DataChunk &output,
+    pst::TypedBag<pst::MessageClass::Note, pstsdk::folder> &item, idx_t row_number);
 
 } // namespace intellekt::duckpst::row_serializer

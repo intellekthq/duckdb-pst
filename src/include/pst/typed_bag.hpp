@@ -99,21 +99,25 @@ inline MessageClass message_class(const pstsdk::pst &pst, const pstsdk::node_id 
 }
 
 /**
- * @brief A wrapper for pstsdk::message so we can treat its prop bag differently
- *        for different schemas. Defaults to IPM.Note.
+ * @brief A typed wrapper for pstsdk prop bags, allowing them to be mounted directly from NID,
+ *		  where the pstsdk companion object is instantiated alongside
  *
- * @tparam V
+ * @tparam V The message/container class type
+ * @tparam T The SDK companion object
  */
-template <MessageClass V>
-struct Message {
+template <MessageClass V, typename T = pstsdk::message>
+struct TypedBag {
 	pstsdk::pst &pst;
-	pstsdk::message &message;
+	pstsdk::node node;
+	pstsdk::property_bag bag;
 
-	inline Message(pstsdk::pst &pst, pstsdk::message &message) : pst(pst), message(message) {
-#ifdef DUCKPST_STRICT_MESSAGE_CHECK
+	std::optional<T> sdk_object;
+
+	inline TypedBag(pstsdk::pst &pst, pstsdk::node_id nid) : pst(pst), node(pst.get_db()->lookup_node(nid)), bag(node) {
+#ifdef DUCKPST_TYPED_BAG_CHECK_STRICT
 		auto message_class = message.get_property_bag().read_prop_if_exists<std::string>(PR_MESSAGE_CLASS_A);
 		if (!message_class)
-			throw duckdb::InvalidInputException("Message is missing PR_MESSAGE_CLASS attribute");
+			throw duckdb::InvalidInputException("TypedBag is missing PR_MESSAGE_CLASS attribute");
 
 		if constexpr (V == BASE_CLASS) {
 			return;
@@ -122,8 +126,13 @@ struct Message {
 		auto templ_name = message_class_name(V);
 
 		if (*message_class != message_class_name(V))
-			throw duckdb::InvalidInputException("Message instantiated as %s, but is %s", templ_name, *message_class);
+			throw duckdb::InvalidInputException("TypedBag instantiated as %s, but is %s", templ_name, *message_class);
 #endif
+		if constexpr (std::is_same_v<T, pstsdk::folder>) {
+			sdk_object.emplace(pstsdk::folder(pst.get_db(), node));
+		} else {
+			sdk_object.emplace(pstsdk::message(node));
+		}
 	}
 
 	inline MessageClass message_class() {

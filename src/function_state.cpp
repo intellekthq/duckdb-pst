@@ -1,5 +1,6 @@
 #include "function_state.hpp"
 #include "pst/duckdb_filesystem.hpp"
+#include "pst/typed_bag.hpp"
 #include "row_serializer.hpp"
 #include "table_function.hpp"
 
@@ -7,8 +8,6 @@
 #include "duckdb/common/vector_size.hpp"
 #include "duckdb/logging/logger.hpp"
 
-#include "pstsdk/pst/folder.h"
-#include "pstsdk/pst/message.h"
 #include <optional>
 #include <utility>
 
@@ -43,10 +42,13 @@ idx_t PSTReadGlobalState::MaxThreads() const {
 	return std::max<idx_t>(partitions->size(), 1);
 }
 
-// PSTIteratorLocalTableFunctionState
 PSTReadLocalState::PSTReadLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec)
     : global_state(global_state), ec(ec) {
 	bind_partition();
+	if (partition.has_value()) {
+		current.emplace(partition->nodes.begin());
+		end.emplace(partition->nodes.end());
+	}
 }
 
 bool PSTReadLocalState::bind_partition() {
@@ -70,55 +72,11 @@ const LogicalType &PSTReadLocalState::output_schema() {
 	return duckpst::output_schema(global_state.bind_data.mode);
 }
 
-// PSTConcreteIteratorState
-template <typename t>
-PSTReadRowSpoolerState<t>::PSTReadRowSpoolerState(PSTReadGlobalState &global_state, ExecutionContext &ec)
-    : PSTReadLocalState(global_state, ec) {
-	if (partition.has_value()) {
-		current.emplace(partition->nodes.begin());
-		end.emplace(partition->nodes.end());
-	}
-}
-
-template <typename t>
-const bool PSTReadRowSpoolerState<t>::finished() {
+const bool PSTReadLocalState::finished() {
 	return (!current) || (current == end);
 }
 
-template <typename t>
-std::optional<t> PSTReadRowSpoolerState<t>::next() {
-	// If the current state is finished, keep going until we can keep binding
-	while (finished() && bind_next()) {
-	}
-
-	// If we can't bind anymore and are finished, we're really finished
-	if (finished())
-		return {};
-
-	t x = current_item();
-	++(*current);
-	return x;
-}
-
-template <typename t>
-node_id PSTReadRowSpoolerState<t>::current_node_id() {
-	return **current;
-}
-
-template <>
-message PSTReadRowSpoolerState<message>::current_item() {
-	auto msg_id = **current;
-	return pst->open_message(msg_id);
-}
-
-template <>
-folder PSTReadRowSpoolerState<folder>::current_item() {
-	auto msg_id = **current;
-	return pst->open_folder(msg_id);
-}
-
-template <typename t>
-bool PSTReadRowSpoolerState<t>::bind_next() {
+bool PSTReadLocalState::bind_next() {
 	while (finished()) {
 		if (!bind_partition())
 			return false;
@@ -129,8 +87,29 @@ bool PSTReadRowSpoolerState<t>::bind_next() {
 	return true;
 }
 
-template <typename t>
-idx_t PSTReadRowSpoolerState<t>::emit_rows(DataChunk &output) {
+template <pst::MessageClass V, typename T>
+PSTReadConcreteLocalState<V, T>::PSTReadConcreteLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec)
+    : PSTReadLocalState(global_state, ec) {
+}
+
+template <pst::MessageClass V, typename T>
+std::optional<pst::TypedBag<V, T>> PSTReadConcreteLocalState<V, T>::next() {
+	// If the current state is finished, keep going until we can keep binding
+	while (finished() && bind_next()) {
+	}
+
+	// If we can't bind anymore and are finished, we're really finished
+	if (finished())
+		return {};
+
+	pst::TypedBag<V, T> typed_bag(*partition->pst, **current);
+
+	++(*current);
+	return typed_bag;
+}
+
+template <pst::MessageClass V, typename T>
+idx_t PSTReadConcreteLocalState<V, T>::emit_rows(DataChunk &output) {
 	idx_t rows = 0;
 
 	for (idx_t i = 0; i < STANDARD_VECTOR_SIZE; ++i) {
@@ -140,7 +119,7 @@ idx_t PSTReadRowSpoolerState<t>::emit_rows(DataChunk &output) {
 			break;
 		}
 
-		row_serializer::into_row<t>(*this, output, *item, i);
+		row_serializer::into_row<V, T>(*this, output, *item, i);
 
 		++rows;
 	}
@@ -148,7 +127,7 @@ idx_t PSTReadRowSpoolerState<t>::emit_rows(DataChunk &output) {
 	return rows;
 }
 
-template class PSTReadRowSpoolerState<message>;
-template class PSTReadRowSpoolerState<folder>;
+template class PSTReadConcreteLocalState<pst::MessageClass::Contact>;
+template class PSTReadConcreteLocalState<pst::MessageClass::Note>;
 
 } // namespace intellekt::duckpst
