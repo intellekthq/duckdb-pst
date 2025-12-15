@@ -94,26 +94,29 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx, OpenFile
 	auto pst = make_shared_ptr<pstsdk::pst>(pst::dfile::open(ctx, file));
 	vector<node_id> nodes;
 
+	idx_t total_rows = 0;
+
+	// Read the tail item if it exists as we start to spool the file
 	std::optional<PSTInputPartition> tail;
 	if (!this->partitions->empty())
 		tail.emplace(this->partitions->back());
+
 	if (tail) {
-		idx_t total = 0;
-		if (tail->stats.row_start.IsValid())
-			total = tail->stats.row_start.GetIndex();
-		if ((total + tail->stats.count) >= limit)
-			return;
+		total_rows = tail->stats.row_start.GetIndex() + tail->stats.count;
 	}
 
 	if (mode == PSTReadFunctionMode::Folder) {
 		for (pstsdk::pst::folder_filter_iterator it = pst->folder_node_begin(); it != pst->folder_node_end(); ++it) {
-			if (nodes.size() >= limit)
+			if ((nodes.size() + total_rows) >= limit)
 				break;
 			nodes.emplace_back(it->id);
 		}
 	} else {
 		for (pstsdk::pst::message_filter_iterator it = pst->message_node_begin(); it != pst->message_node_end(); ++it) {
 			auto id = it->id;
+
+			if ((nodes.size() + total_rows) >= limit)
+				break;
 
 			if (mode == PSTReadFunctionMode::Message) {
 				nodes.emplace_back(id);
@@ -122,6 +125,8 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx, OpenFile
 
 			auto message_node = pst->get_db().get()->lookup_node(id);
 
+			// It really sucks that the only way to determine a message class is by reading and asserting the string.
+			// TODO: Heuristic based on attribute presence (i.e. is chaining a few prop_exists calls faster than the string assert?)
 			auto klass = pst::message_class(*pst, id);
 			switch (mode) {
 			case PSTReadFunctionMode::Appointment:
@@ -152,12 +157,14 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx, OpenFile
 		}
 	}
 
+	// Lock the partition queue and append partitions in order their NIDs are ready
 	auto sync_partitions = this->partitions.synchronize();
 	std::optional<PSTInputPartition> sync_tail;
 	if (!sync_partitions->empty())
 		sync_tail.emplace(sync_partitions->back());
 
-	idx_t total_rows = 0;
+	// Reset the row count, as it may have changed
+	total_rows = 0;
 	if (sync_tail)
 		total_rows = sync_tail->stats.row_start.GetIndex() + sync_tail->stats.count;
 
