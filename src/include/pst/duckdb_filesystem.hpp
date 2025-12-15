@@ -21,6 +21,13 @@ public:
 	 */
 	dfile(duckdb::ClientContext &ctx, const duckdb::OpenFileInfo &file);
 
+	/**
+	 * @brief Construct a new shared "dfile"
+	 *
+	 * @param ctx
+	 * @param finfo
+	 * @return std::shared_ptr<pstsdk::file>
+	 */
 	static std::shared_ptr<pstsdk::file> open(duckdb::ClientContext &ctx, const duckdb::OpenFileInfo &finfo);
 
 	size_t read(std::vector<pstsdk::byte> &buffer, pstsdk::ulonglong offset) const override;

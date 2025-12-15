@@ -157,9 +157,9 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx, OpenFile
 
 	idx_t total_rows = 0;
 	if (sync_tail)
-		total_rows = sync_tail->stats.count;
+		total_rows = sync_tail->stats.row_start.GetIndex() + sync_tail->stats.count;
 
-	while (!nodes.empty()) {
+	while (!nodes.empty() && (total_rows < limit)) {
 		vector<node_id> partition_nodes;
 		PartitionStatistics stats;
 
@@ -167,7 +167,7 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx, OpenFile
 		stats.count_type = CountType::COUNT_EXACT;
 
 		for (idx_t i = 0; i < this->partition_size(); ++i) {
-			if (i >= nodes.size())
+			if (i >= nodes.size() || ((i + total_rows) >= limit))
 				break;
 			partition_nodes.emplace_back(nodes.back());
 			nodes.pop_back();

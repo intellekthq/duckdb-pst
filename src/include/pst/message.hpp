@@ -52,6 +52,50 @@ inline std::string container_class_name(const MessageClass &c) {
 }
 
 /**
+ * @brief Get the container class of a folder by reading PR_CONTAINER_CLASS_A
+ *
+ * @param folder
+ * @return MessageClass
+ */
+inline MessageClass container_class(const pstsdk::folder &folder) {
+	auto maybe_container_class = folder.get_property_bag().read_prop_if_exists<std::string>(PR_CONTAINER_CLASS_A);
+
+	auto klass = BASE_CLASS;
+
+	if (maybe_container_class) {
+		auto maybe_klass = CONTAINER_CLASS_MAP.find(*maybe_container_class);
+		if (maybe_klass != CONTAINER_CLASS_MAP.end()) {
+			auto &[_name, k] = *maybe_klass;
+			klass = k;
+		}
+	}
+
+	return klass;
+}
+
+/**
+ * @brief Get the container class of a message by reading PR_CONTAINER_CLASS_A
+ *
+ * @param msg
+ * @return MessageClass
+ */
+inline MessageClass message_class(const pstsdk::message &msg) {
+	auto maybe_msg_class = msg.get_property_bag().read_prop_if_exists<std::string>(PR_MESSAGE_CLASS_A);
+
+	auto klass = BASE_CLASS;
+
+	if (maybe_msg_class) {
+		auto maybe_klass = MESSAGE_CLASS_MAP.find(*maybe_msg_class);
+		if (maybe_klass != MESSAGE_CLASS_MAP.end()) {
+			auto &[_name, k] = *maybe_klass;
+			klass = k;
+		}
+	}
+
+	return klass;
+}
+
+/**
  * @brief A wrapper for pstsdk::message so we can treat its prop bag differently
  *        for different schemas. Defaults to IPM.Note.
  *
@@ -67,7 +111,6 @@ struct Message {
 		if (!message_class)
 			throw duckdb::InvalidInputException("Message is missing PR_MESSAGE_CLASS attribute");
 
-		// IPM.Note is a base class, so it can be everything
 		if constexpr (V == BASE_CLASS) {
 			return;
 		}
@@ -82,39 +125,5 @@ struct Message {
 		return V;
 	}
 };
-
-inline MessageClass container_class(const pstsdk::folder &folder) {
-	auto maybe_container_class = folder.get_property_bag().read_prop_if_exists<std::string>(PR_CONTAINER_CLASS_A);
-
-	// TODO: iirc this is the outlook default
-	auto klass = BASE_CLASS;
-
-	if (maybe_container_class) {
-		auto maybe_klass = CONTAINER_CLASS_MAP.find(*maybe_container_class);
-		if (maybe_klass != CONTAINER_CLASS_MAP.end()) {
-			auto &[_name, k] = *maybe_klass;
-			klass = k;
-		}
-	}
-
-	return klass;
-}
-
-inline MessageClass message_class(const pstsdk::message &msg) {
-	auto maybe_msg_class = msg.get_property_bag().read_prop_if_exists<std::string>(PR_MESSAGE_CLASS_A);
-
-	// TODO: iirc this is the outlook default
-	auto klass = BASE_CLASS;
-
-	if (maybe_msg_class) {
-		auto maybe_klass = MESSAGE_CLASS_MAP.find(*maybe_msg_class);
-		if (maybe_klass != MESSAGE_CLASS_MAP.end()) {
-			auto &[_name, k] = *maybe_klass;
-			klass = k;
-		}
-	}
-
-	return klass;
-}
 
 } // namespace intellekt::duckpst::pst
