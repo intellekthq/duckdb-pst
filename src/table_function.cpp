@@ -120,7 +120,9 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx, OpenFile
 				continue;
 			}
 
-			auto klass = pst::message_class(pst->open_message(id));
+			auto message_node = pst->get_db().get()->lookup_node(id);
+
+			auto klass = pst::message_class(*pst, id);
 			switch (mode) {
 			case PSTReadFunctionMode::Appointment:
 				if (klass != pst::MessageClass::Appointment)

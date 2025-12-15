@@ -1,6 +1,7 @@
 #pragma once
 
 #include "duckdb/common/exception.hpp"
+#include "pstsdk/ltp/propbag.h"
 #include "pstsdk/mapitags.h"
 #include "pstsdk/pst/pst.h"
 #include <unordered_map>
@@ -54,11 +55,12 @@ inline std::string container_class_name(const MessageClass &c) {
 /**
  * @brief Get the container class of a folder by reading PR_CONTAINER_CLASS_A
  *
- * @param folder
+ * @param msg
  * @return MessageClass
  */
-inline MessageClass container_class(const pstsdk::folder &folder) {
-	auto maybe_container_class = folder.get_property_bag().read_prop_if_exists<std::string>(PR_CONTAINER_CLASS_A);
+inline MessageClass container_class(const pstsdk::pst &pst, const pstsdk::node_id &nid) {
+	auto bag = pstsdk::property_bag(pst.get_db().get()->lookup_node(nid));
+	auto maybe_container_class = bag.read_prop_if_exists<std::string>(PR_CONTAINER_CLASS_A);
 
 	auto klass = BASE_CLASS;
 
@@ -74,13 +76,14 @@ inline MessageClass container_class(const pstsdk::folder &folder) {
 }
 
 /**
- * @brief Get the container class of a message by reading PR_CONTAINER_CLASS_A
+ * @brief Get the container class of a message by reading PR_MESSAGE_CLASS_A
  *
  * @param msg
  * @return MessageClass
  */
-inline MessageClass message_class(const pstsdk::message &msg) {
-	auto maybe_msg_class = msg.get_property_bag().read_prop_if_exists<std::string>(PR_MESSAGE_CLASS_A);
+inline MessageClass message_class(const pstsdk::pst &pst, const pstsdk::node_id &nid) {
+	auto bag = pstsdk::property_bag(pst.get_db().get()->lookup_node(nid));
+	auto maybe_msg_class = bag.read_prop_if_exists<std::string>(PR_MESSAGE_CLASS_A);
 
 	auto klass = BASE_CLASS;
 
@@ -107,6 +110,7 @@ struct Message {
 	pstsdk::message &message;
 
 	inline Message(pstsdk::pst &pst, pstsdk::message &message) : pst(pst), message(message) {
+#ifdef DUCKPST_STRICT_MESSAGE_CHECK
 		auto message_class = message.get_property_bag().read_prop_if_exists<std::string>(PR_MESSAGE_CLASS_A);
 		if (!message_class)
 			throw duckdb::InvalidInputException("Message is missing PR_MESSAGE_CLASS attribute");
@@ -119,6 +123,7 @@ struct Message {
 
 		if (*message_class != message_class_name(V))
 			throw duckdb::InvalidInputException("Message instantiated as %s, but is %s", templ_name, *message_class);
+#endif
 	}
 
 	inline MessageClass message_class() {
