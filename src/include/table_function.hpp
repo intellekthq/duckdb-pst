@@ -1,6 +1,7 @@
 #pragma once
 
 #include "schema.hpp"
+#include "pst/message.hpp"
 
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/open_file_info.hpp"
@@ -28,14 +29,27 @@ using namespace pstsdk;
 static constexpr idx_t DEFAULT_PARTITION_SIZE = DEFAULT_STANDARD_VECTOR_SIZE * 2;
 static constexpr idx_t DEFAULT_BODY_SIZE_BYTES = 1000000;
 
-enum PSTReadFunctionMode { Folder, Message, NUM_SHAPES };
+/**
+ * @brief Determines output shape and nid filters
+ */
+enum PSTReadFunctionMode {
+	// One for each message class
+	MESSAGE_CLASSES(MESSAGE_CLASS_ENUM)
+	// All messages (contact, appt, etc.) serialized as IPM.Note
+	Message,
+	Folder,
+	NUM_SHAPES
+};
 
 inline const LogicalType &output_schema(const PSTReadFunctionMode &mode) {
 	switch (mode) {
 	case PSTReadFunctionMode::Folder:
 		return schema::FOLDER_SCHEMA;
+	case PSTReadFunctionMode::Note:
 	case PSTReadFunctionMode::Message:
 		return schema::MESSAGE_SCHEMA;
+	case PSTReadFunctionMode::Contact:
+		return schema::CONTACT_SCHEMA;
 	default:
 		throw InvalidInputException("Unknown read function mode. Please report this bug on GitHub.");
 	}
@@ -44,6 +58,8 @@ inline const LogicalType &output_schema(const PSTReadFunctionMode &mode) {
 static const map<string, PSTReadFunctionMode> FUNCTIONS = {
     {"read_pst_folders", Folder},
     {"read_pst_messages", Message},
+    {"read_pst_notes", Note},
+    {"read_pst_contacts", Contact},
 };
 
 static const named_parameter_type_map_t NAMED_PARAMETERS = {{"max_body_size_bytes", LogicalType::UBIGINT},
@@ -69,7 +85,7 @@ struct PSTInputPartition {
 
 struct PSTReadTableFunctionData : public TableFunctionData {
 	vector<OpenFileInfo> files;
-	vector<PSTInputPartition> partitions;
+	boost::synchronized_value<vector<PSTInputPartition>> partitions;
 
 	duckdb::named_parameter_map_t named_parameters;
 
@@ -103,11 +119,19 @@ public:
 	void bind_table_function_output_schema(vector<LogicalType> &return_types, vector<string> &names);
 
 	/**
-	 * @brief Mount PSTs and bucket NDB nodes against the default DuckDB vector size
+	 * @brief Plan all partitions for all files
 	 *
 	 * @param ctx
 	 */
 	void plan_input_partitions(ClientContext &ctx);
+
+	/**
+	 * @brief Mount a PST and bucket it into partitions, optionally applying a message_class
+	 *        filter depending on the read mode
+	 *
+	 * @param pst
+	 */
+	void plan_file_partitions(ClientContext &ctx, OpenFileInfo &file, idx_t limit);
 
 	/**
 	 * @brief Copy this function data (used by late materialization)

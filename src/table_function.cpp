@@ -1,5 +1,6 @@
 #include "table_function.hpp"
 #include "function_state.hpp"
+#include "pst/message.hpp"
 #include "schema.hpp"
 
 #include "duckdb/common/exception.hpp"
@@ -18,10 +19,12 @@
 #include "duckdb/main/client_data.hpp"
 #include "duckdb/storage/statistics/node_statistics.hpp"
 
-#include "pstsdk_duckdb_filesystem.hpp"
+#include "pst/duckdb_filesystem.hpp"
 #include "pstsdk/pst/pst.h"
 #include "pstsdk/pst/folder.h"
 
+#include <exception>
+#include <future>
 #include <limits>
 
 namespace intellekt::duckpst {
@@ -86,76 +89,138 @@ void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalT
 	}
 }
 
-void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
-	if (!partitions.empty())
-		return;
-	auto total_rows = 0;
-	auto limit = this->read_limit();
+// TODO: this applies a filter when mode is not message
+void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx, OpenFileInfo &file, idx_t limit) {
+	auto pst = make_shared_ptr<pstsdk::pst>(pst::dfile::open(ctx, file));
+	vector<node_id> nodes;
 
-	for (auto &finfo : files) {
-		if (total_rows >= limit)
-			break;
+	idx_t total_rows = 0;
 
-		try {
-			auto pst = make_shared_ptr<pstsdk::pst>(dfile::open(ctx, finfo));
+	// Read the tail item if it exists as we start to spool the file
+	std::optional<PSTInputPartition> tail;
+	if (!this->partitions->empty())
+		tail.emplace(this->partitions->back());
 
-			vector<node_id> nodes;
+	if (tail) {
+		total_rows = tail->stats.row_start.GetIndex() + tail->stats.count;
+	}
 
-			// TODO
-			switch (mode) {
-			case PSTReadFunctionMode::Folder:
-				for (pstsdk::pst::folder_filter_iterator it = pst->folder_node_begin(); it != pst->folder_node_end();
-				     ++it) {
-					if (nodes.size() >= limit)
-						break;
-					nodes.emplace_back(it->id);
-				}
+	if (mode == PSTReadFunctionMode::Folder) {
+		for (pstsdk::pst::folder_filter_iterator it = pst->folder_node_begin(); it != pst->folder_node_end(); ++it) {
+			if ((nodes.size() + total_rows) >= limit)
 				break;
-			case PSTReadFunctionMode::Message:
-				for (pstsdk::pst::message_filter_iterator it = pst->message_node_begin(); it != pst->message_node_end();
-				     ++it) {
-					if (nodes.size() >= limit)
-						break;
-					nodes.emplace_back(it->id);
-				}
+			nodes.emplace_back(it->id);
+		}
+	} else {
+		for (pstsdk::pst::message_filter_iterator it = pst->message_node_begin(); it != pst->message_node_end(); ++it) {
+			auto id = it->id;
+
+			if ((nodes.size() + total_rows) >= limit)
+				break;
+
+			if (mode == PSTReadFunctionMode::Message) {
+				nodes.emplace_back(id);
+				continue;
+			}
+
+			auto message_node = pst->get_db().get()->lookup_node(id);
+
+			// It really sucks that the only way to determine a message class is by reading and asserting the string.
+			// TODO: Heuristic based on attribute presence (i.e. is chaining a few prop_exists calls faster than the string assert?)
+			auto klass = pst::message_class(*pst, id);
+			switch (mode) {
+			case PSTReadFunctionMode::Appointment:
+				if (klass != pst::MessageClass::Appointment)
+					continue;
+				break;
+			case PSTReadFunctionMode::Contact:
+				if (klass != pst::MessageClass::Contact)
+					continue;
+				break;
+			case PSTReadFunctionMode::Note:
+				if (klass != pst::MessageClass::Note)
+					continue;
+				break;
+			case PSTReadFunctionMode::StickyNote:
+				if (klass != pst::MessageClass::StickyNote)
+					continue;
+				break;
+			case PSTReadFunctionMode::Task:
+				if (klass != pst::MessageClass::Task)
+					continue;
 				break;
 			default:
 				break;
 			}
 
-			while (!nodes.empty()) {
-				vector<node_id> partition_nodes;
-				PartitionStatistics stats;
-
-				stats.row_start = total_rows;
-				stats.count_type = CountType::COUNT_EXACT;
-
-				for (idx_t i = 0; i < this->partition_size(); ++i) {
-					if (i >= nodes.size())
-						break;
-					partition_nodes.emplace_back(nodes.back());
-					nodes.pop_back();
-				}
-
-				stats.count = partition_nodes.size();
-				total_rows += partition_nodes.size();
-
-				partitions.emplace_back<PSTInputPartition>(
-				    {partitions.size(), pst, finfo, mode, stats, std::move(partition_nodes)});
-			}
-
-		} catch (const std::exception &e) {
-			DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", finfo.path, e.what());
+			nodes.emplace_back(id);
 		}
 	}
 
-	DUCKDB_LOG_INFO(ctx, "Planned %d partitions (%d files)", partitions.size(), files.size());
+	// Lock the partition queue and append partitions in order their NIDs are ready
+	auto sync_partitions = this->partitions.synchronize();
+	std::optional<PSTInputPartition> sync_tail;
+	if (!sync_partitions->empty())
+		sync_tail.emplace(sync_partitions->back());
+
+	// Reset the row count, as it may have changed
+	total_rows = 0;
+	if (sync_tail)
+		total_rows = sync_tail->stats.row_start.GetIndex() + sync_tail->stats.count;
+
+	while (!nodes.empty() && (total_rows < limit)) {
+		vector<node_id> partition_nodes;
+		PartitionStatistics stats;
+
+		stats.row_start = total_rows;
+		stats.count_type = CountType::COUNT_EXACT;
+
+		for (idx_t i = 0; i < this->partition_size(); ++i) {
+			if (i >= nodes.size() || ((i + total_rows) >= limit))
+				break;
+			partition_nodes.emplace_back(nodes.back());
+			nodes.pop_back();
+		}
+
+		stats.count = partition_nodes.size();
+		total_rows += partition_nodes.size();
+
+		sync_partitions->emplace_back<PSTInputPartition>(
+		    {sync_partitions->size(), pst, file, mode, stats, std::move(partition_nodes)});
+	}
+}
+
+void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
+	if (!partitions->empty())
+		return;
+	auto total_rows = 0;
+	auto limit = this->read_limit();
+
+	vector<std::future<void>> plan_tasks;
+
+	for (auto &file : files) {
+		plan_tasks.emplace_back(std::async(std::launch::async, &PSTReadTableFunctionData::plan_file_partitions, this,
+		                                   std::ref(ctx), std::ref(file), limit));
+	}
+
+	for (idx_t i = 0; i < files.size(); ++i) {
+		try {
+			plan_tasks[i].get();
+		} catch (std::exception &e) {
+			DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", files[i].path, e.what());
+		}
+	}
+
+	DUCKDB_LOG_INFO(ctx, "Planned %d partitions (%d files)", partitions->size(), files.size());
 }
 
 PSTReadTableFunctionData::PSTReadTableFunctionData(const PSTReadTableFunctionData &other_data) : mode(other_data.mode) {
 	files = other_data.files;
-	partitions = vector<PSTInputPartition>(other_data.partitions.begin(), other_data.partitions.end());
 	named_parameters = other_data.named_parameters;
+
+	for (auto &part : *other_data.partitions.synchronize()) {
+		this->partitions->emplace_back(PSTInputPartition(part));
+	}
 }
 
 unique_ptr<FunctionData> PSTReadTableFunctionData::Copy() const {
@@ -179,15 +244,11 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 	case PSTReadFunctionMode::Folder:
 		local_state = make_uniq<PSTReadRowSpoolerState<folder>>(global_state, ec);
 		break;
-	case PSTReadFunctionMode::Message:
-		local_state = make_uniq<PSTReadRowSpoolerState<message>>(global_state, ec);
-		break;
 	default:
+		local_state = make_uniq<PSTReadRowSpoolerState<message>>(global_state, ec);
 		break;
 	}
 
-	if (!local_state)
-		return nullptr;
 	return local_state;
 }
 
@@ -204,7 +265,7 @@ unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const Function
 	auto pst_data = data->Cast<PSTReadTableFunctionData>();
 	idx_t max_cardinality = 0;
 
-	for (auto &partition : pst_data.partitions) {
+	for (auto &partition : pst_data.partitions.get()) {
 		max_cardinality += partition.stats.count;
 	}
 
@@ -219,7 +280,7 @@ vector<PartitionStatistics> PSTPartitionStats(ClientContext &ctx, GetPartitionSt
 	auto pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
 
 	vector<PartitionStatistics> stats;
-	for (auto &part : pst_data.partitions) {
+	for (auto &part : pst_data.partitions.get()) {
 		stats.push_back(part.stats);
 	}
 
@@ -244,7 +305,7 @@ InsertionOrderPreservingMap<string> PSTDynamicToString(duckdb::TableFunctionDyna
 	InsertionOrderPreservingMap<string> meta;
 
 	meta.insert(make_pair("Files read", std::to_string(pst_data.files.size())));
-	meta.insert(make_pair("Partitions read", std::to_string(pst_data.partitions.size())));
+	meta.insert(make_pair("Partitions read", std::to_string(pst_data.partitions->size())));
 	meta.insert(make_pair("Partition size", std::to_string(pst_data.partition_size())));
 
 	return meta;

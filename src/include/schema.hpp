@@ -156,6 +156,94 @@ enum class MessageProjection {
 static const auto MESSAGE_SCHEMA =
     LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) MESSAGE_CHILDREN(SCHEMA_CHILD)});
 
+/* Contact schema */
+
+#define CONTACT_CHILDREN(LT)                                                                                           \
+	LT(account_name, LogicalType::VARCHAR)                                                                             \
+	LT(callback_number, LogicalType::VARCHAR)                                                                          \
+	LT(conversation_prohibited, LogicalType::BOOLEAN)                                                                  \
+	LT(disclose_recipients, LogicalType::BOOLEAN)                                                                      \
+	LT(generation_suffix, LogicalType::VARCHAR)                                                                        \
+	LT(given_name, LogicalType::VARCHAR)                                                                               \
+	LT(government_id_number, LogicalType::VARCHAR)                                                                     \
+	LT(business_telephone, LogicalType::VARCHAR)                                                                       \
+	LT(home_telephone, LogicalType::VARCHAR)                                                                           \
+	LT(initials, LogicalType::VARCHAR)                                                                                 \
+	LT(keyword, LogicalType::VARCHAR)                                                                                  \
+	LT(language, LogicalType::VARCHAR)                                                                                 \
+	LT(location, LogicalType::VARCHAR)                                                                                 \
+	LT(mail_permission, LogicalType::BOOLEAN)                                                                          \
+	LT(mhs_common_name, LogicalType::VARCHAR)                                                                          \
+	LT(organizational_id_number, LogicalType::VARCHAR)                                                                 \
+	LT(surname, LogicalType::VARCHAR)                                                                                  \
+	LT(original_display_name, LogicalType::VARCHAR)                                                                    \
+	LT(postal_address, LogicalType::VARCHAR)                                                                           \
+	LT(company_name, LogicalType::VARCHAR)                                                                             \
+	LT(title, LogicalType::VARCHAR)                                                                                    \
+	LT(department_name, LogicalType::VARCHAR)                                                                          \
+	LT(office_location, LogicalType::VARCHAR)                                                                          \
+	LT(primary_telephone, LogicalType::VARCHAR)                                                                        \
+	LT(business_telephone_2, LogicalType::VARCHAR)                                                                     \
+	LT(mobile_telephone, LogicalType::VARCHAR)                                                                         \
+	LT(radio_telephone, LogicalType::VARCHAR)                                                                          \
+	LT(car_telephone, LogicalType::VARCHAR)                                                                            \
+	LT(other_telephone, LogicalType::VARCHAR)                                                                          \
+	LT(transmittable_display_name, LogicalType::VARCHAR)                                                               \
+	LT(pager_telephone, LogicalType::VARCHAR)                                                                          \
+	LT(primary_fax, LogicalType::VARCHAR)                                                                              \
+	LT(business_fax, LogicalType::VARCHAR)                                                                             \
+	LT(home_fax, LogicalType::VARCHAR)                                                                                 \
+	LT(business_address_country, LogicalType::VARCHAR)                                                                 \
+	LT(business_address_city, LogicalType::VARCHAR)                                                                    \
+	LT(business_address_state, LogicalType::VARCHAR)                                                                   \
+	LT(business_address_street, LogicalType::VARCHAR)                                                                  \
+	LT(business_postal_code, LogicalType::VARCHAR)                                                                     \
+	LT(business_po_box, LogicalType::VARCHAR)                                                                          \
+	LT(telex_number, LogicalType::VARCHAR)                                                                             \
+	LT(isdn_number, LogicalType::VARCHAR)                                                                              \
+	LT(assistant_telephone, LogicalType::VARCHAR)                                                                      \
+	LT(home_telephone_2, LogicalType::VARCHAR)                                                                         \
+	LT(assistant, LogicalType::VARCHAR)                                                                                \
+	LT(send_rich_info, LogicalType::BOOLEAN)                                                                           \
+	LT(wedding_anniversary, LogicalType::TIMESTAMP_S)                                                                  \
+	LT(birthday, LogicalType::TIMESTAMP_S)                                                                             \
+	LT(hobbies, LogicalType::VARCHAR)                                                                                  \
+	LT(middle_name, LogicalType::VARCHAR)                                                                              \
+	LT(display_name_prefix, LogicalType::VARCHAR)                                                                      \
+	LT(profession, LogicalType::VARCHAR)                                                                               \
+	LT(preferred_by_name, LogicalType::VARCHAR)                                                                        \
+	LT(spouse_name, LogicalType::VARCHAR)                                                                              \
+	LT(computer_network_name, LogicalType::VARCHAR)                                                                    \
+	LT(customer_id, LogicalType::VARCHAR)                                                                              \
+	LT(ttytdd_phone, LogicalType::VARCHAR)                                                                             \
+	LT(ftp_site, LogicalType::VARCHAR)                                                                                 \
+	LT(gender, LogicalType::SMALLINT)                                                                                  \
+	LT(manager_name, LogicalType::VARCHAR)                                                                             \
+	LT(nickname, LogicalType::VARCHAR)                                                                                 \
+	LT(personal_home_page, LogicalType::VARCHAR)                                                                       \
+	LT(business_home_page, LogicalType::VARCHAR)                                                                       \
+	LT(company_main_phone, LogicalType::VARCHAR)                                                                       \
+	LT(childrens_names, LogicalType::VARCHAR)                                                                          \
+	LT(home_address_city, LogicalType::VARCHAR)                                                                        \
+	LT(home_address_country, LogicalType::VARCHAR)                                                                     \
+	LT(home_address_postal_code, LogicalType::VARCHAR)                                                                 \
+	LT(home_address_state, LogicalType::VARCHAR)                                                                       \
+	LT(home_address_street, LogicalType::VARCHAR)                                                                      \
+	LT(home_address_po_box, LogicalType::VARCHAR)                                                                      \
+	LT(other_address_city, LogicalType::VARCHAR)                                                                       \
+	LT(other_address_country, LogicalType::VARCHAR)                                                                    \
+	LT(other_address_postal_code, LogicalType::VARCHAR)                                                                \
+	LT(other_address_state, LogicalType::VARCHAR)                                                                      \
+	LT(other_address_street, LogicalType::VARCHAR)                                                                     \
+	LT(other_address_po_box, LogicalType::VARCHAR)
+
+enum class ContactProjection {
+	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) CONTACT_CHILDREN(SCHEMA_CHILD_NAME)
+};
+
+static const auto CONTACT_SCHEMA =
+    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) CONTACT_CHILDREN(SCHEMA_CHILD)});
+
 /* Folder schema */
 
 #define FOLDER_CHILDREN(LT)                                                                                            \

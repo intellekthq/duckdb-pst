@@ -12,6 +12,8 @@
 #include "pstsdk/pst/message.h"
 #include "pstsdk/util/primitives.h"
 #include "pstsdk/util/util.h"
+#include "pst/message.hpp"
+#include "table_function.hpp"
 
 #include <cstdint>
 #include <type_traits>
@@ -267,9 +269,9 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 }
 
 template <>
-void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::message &msg,
-                       idx_t row_number, idx_t column_index) {
-	auto &prop_bag = msg.get_property_bag();
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output,
+                       pst::Message<pst::MessageClass::Note> &msg, idx_t row_number, idx_t column_index) {
+	auto &prop_bag = msg.message.get_property_bag();
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 	auto read_size = local_state.global_state.bind_data.max_body_size_bytes();
@@ -302,15 +304,15 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_MESSAGE_FLAGS));
 		break;
 	case static_cast<int>(schema::MessageProjection::message_size):
-		output.SetValue(column_index, row_number, Value::UBIGINT(msg.size()));
+		output.SetValue(column_index, row_number, Value::UBIGINT(msg.message.size()));
 		break;
 	case static_cast<int>(schema::MessageProjection::has_attachments): {
-		size_t attachment_count = msg.get_attachment_count();
+		size_t attachment_count = msg.message.get_attachment_count();
 		output.SetValue(column_index, row_number, Value::BOOLEAN(attachment_count > 0));
 		break;
 	}
 	case static_cast<int>(schema::MessageProjection::attachment_count): {
-		size_t attachment_count = msg.get_attachment_count();
+		size_t attachment_count = msg.message.get_attachment_count();
 		output.SetValue(column_index, row_number, Value::UBIGINT(attachment_count));
 		break;
 	}
@@ -321,8 +323,8 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		}
 
 		if (read_size == 0)
-			read_size = msg.body_size();
-		read_size = std::min<idx_t>(read_size, msg.body_size());
+			read_size = msg.message.body_size();
+		read_size = std::min<idx_t>(read_size, msg.message.body_size());
 		output.SetValue(column_index, row_number,
 		                from_prop_stream<std::string>(col_type, prop_bag, PR_BODY_A, read_size));
 		break;
@@ -333,8 +335,8 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		}
 
 		if (read_size == 0)
-			read_size = msg.html_body_size();
-		read_size = std::min<idx_t>(read_size, msg.html_body_size());
+			read_size = msg.message.html_body_size();
+		read_size = std::min<idx_t>(read_size, msg.message.html_body_size());
 		output.SetValue(column_index, row_number,
 		                from_prop_stream<std::string>(col_type, prop_bag, PR_HTML, read_size));
 		break;
@@ -346,7 +348,7 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		break;
 	case static_cast<int>(schema::MessageProjection::recipients): {
 		vector<Value> recipients;
-		for (auto it = msg.recipient_begin(); it != msg.recipient_end(); ++it) {
+		for (auto it = msg.message.recipient_begin(); it != msg.message.recipient_end(); ++it) {
 			try {
 				recipients.emplace_back(into_struct(local_state, schema::RECIPIENT_SCHEMA, *it));
 			} catch (std::exception &e) {
@@ -359,7 +361,7 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	}
 	case static_cast<int>(schema::MessageProjection::attachments): {
 		vector<Value> attachments;
-		for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
+		for (auto it = msg.message.attachment_begin(); it != msg.message.attachment_end(); ++it) {
 			try {
 				attachments.emplace_back(into_struct(local_state, schema::ATTACHMENT_SCHEMA, *it));
 			} catch (std::exception &e) {
@@ -371,6 +373,278 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		output.SetValue(column_index, row_number, Value::LIST(schema::ATTACHMENT_SCHEMA, attachments));
 		break;
 	}
+	default:
+		break;
+	}
+}
+
+template <>
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output,
+                       pst::Message<pst::MessageClass::Contact> &msg, idx_t row_number, idx_t column_index) {
+	auto &prop_bag = msg.message.get_property_bag();
+	auto schema_col = local_state.column_ids()[column_index];
+	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
+
+	switch (schema_col) {
+	case static_cast<int>(schema::ContactProjection::account_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_ACCOUNT_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::callback_number):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_CALLBACK_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::conversation_prohibited):
+		output.SetValue(column_index, row_number, from_prop<bool>(col_type, prop_bag, PR_CONVERSION_PROHIBITED));
+		break;
+	case static_cast<int>(schema::ContactProjection::disclose_recipients):
+		output.SetValue(column_index, row_number, from_prop<bool>(col_type, prop_bag, PR_DISCLOSE_RECIPIENTS));
+		break;
+	case static_cast<int>(schema::ContactProjection::generation_suffix):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_GENERATION_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::given_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_GIVEN_NAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::government_id_number):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_GOVERNMENT_ID_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::business_telephone):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_BUSINESS_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::home_telephone):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_HOME_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::initials):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_INITIALS_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::keyword):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_KEYWORD_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::language):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_LANGUAGE_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::location):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_LOCATION_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::mail_permission):
+		output.SetValue(column_index, row_number, from_prop<bool>(col_type, prop_bag, PR_MAIL_PERMISSION));
+		break;
+	case static_cast<int>(schema::ContactProjection::mhs_common_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_MHS_COMMON_NAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::organizational_id_number):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_ORGANIZATIONAL_ID_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::surname):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_SURNAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::original_display_name):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_ORIGINAL_DISPLAY_NAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::postal_address):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_POSTAL_ADDRESS_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::company_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_COMPANY_NAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::title):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_TITLE_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::department_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_DEPARTMENT_NAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::office_location):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_OFFICE_LOCATION_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::primary_telephone):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_PRIMARY_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::business_telephone_2):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_BUSINESS2_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::mobile_telephone):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_MOBILE_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::radio_telephone):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_RADIO_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::car_telephone):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_CAR_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::other_telephone):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_OTHER_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::transmittable_display_name):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_TRANSMITABLE_DISPLAY_NAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::pager_telephone):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_PAGER_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::primary_fax):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_PRIMARY_FAX_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::business_fax):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_BUSINESS_FAX_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::home_fax):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_HOME_FAX_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::business_address_country):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_COUNTRY_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::business_address_city):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_LOCALITY_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::business_address_state):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_STATE_OR_PROVINCE_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::business_address_street):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_STREET_ADDRESS_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::business_postal_code):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_POSTAL_CODE_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::business_po_box):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_POST_OFFICE_BOX_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::telex_number):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_TELEX_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::isdn_number):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_ISDN_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::assistant_telephone):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_ASSISTANT_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::home_telephone_2):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_HOME2_TELEPHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::assistant):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_ASSISTANT_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::send_rich_info):
+		output.SetValue(column_index, row_number, from_prop<bool>(col_type, prop_bag, PR_SEND_RICH_INFO));
+		break;
+	case static_cast<int>(schema::ContactProjection::wedding_anniversary):
+		output.SetValue(column_index, row_number,
+		                from_prop<pstsdk::ulonglong>(col_type, prop_bag, PR_WEDDING_ANNIVERSARY));
+		break;
+	case static_cast<int>(schema::ContactProjection::birthday):
+		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, prop_bag, PR_BIRTHDAY));
+		break;
+	case static_cast<int>(schema::ContactProjection::hobbies):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_HOBBIES_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::middle_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_MIDDLE_NAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::display_name_prefix):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_DISPLAY_NAME_PREFIX_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::profession):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_PROFESSION_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::preferred_by_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_PREFERRED_BY_NAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::spouse_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_SPOUSE_NAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::computer_network_name):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_COMPUTER_NETWORK_NAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::customer_id):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_CUSTOMER_ID_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::ttytdd_phone):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_TTYTDD_PHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::ftp_site):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_FTP_SITE_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::gender):
+		output.SetValue(column_index, row_number, from_prop<int16_t>(col_type, prop_bag, PR_GENDER));
+		break;
+	case static_cast<int>(schema::ContactProjection::manager_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_MANAGER_NAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::nickname):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_NICKNAME_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::personal_home_page):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_PERSONAL_HOME_PAGE_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::business_home_page):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_BUSINESS_HOME_PAGE_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::company_main_phone):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_COMPANY_MAIN_PHONE_NUMBER_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::childrens_names):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_CHILDRENS_NAMES_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::home_address_city):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_HOME_ADDRESS_CITY_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::home_address_country):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_HOME_ADDRESS_COUNTRY_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::home_address_postal_code):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_HOME_ADDRESS_POSTAL_CODE_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::home_address_state):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_HOME_ADDRESS_STATE_OR_PROVINCE_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::home_address_street):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_HOME_ADDRESS_STREET_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::home_address_po_box):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_HOME_ADDRESS_POST_OFFICE_BOX_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::other_address_city):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_OTHER_ADDRESS_CITY_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::other_address_country):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_OTHER_ADDRESS_COUNTRY_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::other_address_postal_code):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_OTHER_ADDRESS_POSTAL_CODE_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::other_address_state):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_OTHER_ADDRESS_STATE_OR_PROVINCE_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::other_address_street):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_OTHER_ADDRESS_STREET_A));
+		break;
+	case static_cast<int>(schema::ContactProjection::other_address_po_box):
+		output.SetValue(column_index, row_number,
+		                from_prop<std::string>(col_type, prop_bag, PR_OTHER_ADDRESS_POST_OFFICE_BOX_A));
+		break;
 	default:
 		break;
 	}
@@ -425,14 +699,31 @@ void into_row(PSTReadLocalState &local_state, DataChunk &output, Item &item, idx
 				// Bind PST attributes
 				set_output_column<pstsdk::pst>(local_state, output, *local_state.pst, row_number, col_idx);
 
-				// Bind common columns (message only)
 				if constexpr (std::is_same_v<Item, pstsdk::message>) {
-					set_output_column<const_property_object>(local_state, output,
-					                                         static_cast<pstsdk::message>(item).get_property_bag(),
-					                                         row_number, col_idx);
+					// Bind common columns (message only)
+					set_output_column<const_property_object>(local_state, output, item.get_property_bag(), row_number,
+					                                         col_idx);
+					switch (local_state.partition->mode) {
+					case PSTReadFunctionMode::Note:
+					case PSTReadFunctionMode::Message: {
+						auto concrete = pst::Message<pst::MessageClass::Note>(*local_state.pst, item);
+						set_output_column<pst::Message<pst::MessageClass::Note>>(local_state, output, concrete,
+						                                                         row_number, col_idx);
+						break;
+					}
+					case PSTReadFunctionMode::Contact: {
+						auto concrete = pst::Message<pst::MessageClass::Contact>(*local_state.pst, item);
+						set_output_column<pst::Message<pst::MessageClass::Contact>>(local_state, output, concrete,
+						                                                            row_number, col_idx);
+						break;
+					}
+					default:
+						break;
+					}
+				} else if constexpr (std::is_same_v<Item, pstsdk::folder>) {
+					set_output_column<Item>(local_state, output, item, row_number, col_idx);
 				}
 
-				set_output_column<Item>(local_state, output, item, row_number, col_idx);
 			} catch (std::exception &e) {
 				auto schema_col = local_state.column_ids()[col_idx];
 				auto &output_schema = local_state.output_schema();

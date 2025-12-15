@@ -1,5 +1,5 @@
 #include "function_state.hpp"
-#include "pstsdk_duckdb_filesystem.hpp"
+#include "pst/duckdb_filesystem.hpp"
 #include "row_serializer.hpp"
 #include "table_function.hpp"
 
@@ -20,7 +20,7 @@ using namespace pstsdk;
 PSTReadGlobalState::PSTReadGlobalState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids)
     : bind_data(bind_data), column_ids(std::move(column_ids)) {
 	auto sync_partitions = partitions.synchronize();
-	for (auto &part : bind_data.partitions) {
+	for (auto &part : bind_data.partitions.get()) {
 		sync_partitions->push(part);
 	}
 }
