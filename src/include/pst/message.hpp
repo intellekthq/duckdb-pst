@@ -14,11 +14,11 @@ namespace intellekt::duckpst::pst {
 	LT(StickyNote)                                                                                                     \
 	LT(Task)
 
-#define MESSAGE_CLASS_ENUM(name, ...) name,
-#define CONTAINER_CLASS_NAME(name)    "IPF." #name,
-#define MESSAGE_CLASS_NAME(name)      "IPM." #name,
-#define MESSAGE_CLASS_ENTRY(name)     {MESSAGE_CLASS_NAME(name) name},
-#define CONTAINER_CLASS_ENTRY(name)   {CONTAINER_CLASS_NAME(name) name},
+#define MESSAGE_CLASS_ENUM(name)    name,
+#define CONTAINER_CLASS_NAME(name)  "IPF." #name,
+#define MESSAGE_CLASS_NAME(name)    "IPM." #name,
+#define MESSAGE_CLASS_ENTRY(name)   {MESSAGE_CLASS_NAME(name) name},
+#define CONTAINER_CLASS_ENTRY(name) {CONTAINER_CLASS_NAME(name) name},
 
 enum MessageClass { MESSAGE_CLASSES(MESSAGE_CLASS_ENUM) };
 

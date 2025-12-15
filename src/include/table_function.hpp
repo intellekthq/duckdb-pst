@@ -85,7 +85,7 @@ struct PSTInputPartition {
 
 struct PSTReadTableFunctionData : public TableFunctionData {
 	vector<OpenFileInfo> files;
-	vector<PSTInputPartition> partitions;
+	boost::synchronized_value<vector<PSTInputPartition>> partitions;
 
 	duckdb::named_parameter_map_t named_parameters;
 
@@ -119,11 +119,19 @@ public:
 	void bind_table_function_output_schema(vector<LogicalType> &return_types, vector<string> &names);
 
 	/**
-	 * @brief Mount PSTs and bucket NDB nodes against the default DuckDB vector size
+	 * @brief Plan all partitions for all files
 	 *
 	 * @param ctx
 	 */
 	void plan_input_partitions(ClientContext &ctx);
+
+	/**
+	 * @brief Mount a PST and bucket it into partitions, optionally applying a message_class
+	 *        filter depending on the read mode
+	 *
+	 * @param pst
+	 */
+	void plan_file_partitions(ClientContext &ctx, OpenFileInfo &file, idx_t limit);
 
 	/**
 	 * @brief Copy this function data (used by late materialization)

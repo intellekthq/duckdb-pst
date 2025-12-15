@@ -709,11 +709,13 @@ void into_row(PSTReadLocalState &local_state, DataChunk &output, Item &item, idx
 						auto concrete = pst::Message<pst::MessageClass::Note>(*local_state.pst, item);
 						set_output_column<pst::Message<pst::MessageClass::Note>>(local_state, output, concrete,
 						                                                         row_number, col_idx);
+						break;
 					}
 					case PSTReadFunctionMode::Contact: {
 						auto concrete = pst::Message<pst::MessageClass::Contact>(*local_state.pst, item);
 						set_output_column<pst::Message<pst::MessageClass::Contact>>(local_state, output, concrete,
 						                                                            row_number, col_idx);
+						break;
 					}
 					default:
 						break;
