@@ -4,7 +4,6 @@
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/types/data_chunk.hpp"
 #include "duckdb/common/types/vector.hpp"
-#include "pst/typed_bag.hpp"
 #include "pstsdk/ltp/object.h"
 #include "pstsdk/util/primitives.h"
 
@@ -50,9 +49,9 @@ duckdb::Value from_prop_stream(const LogicalType &t, pstsdk::const_property_obje
  * @param row_number Row number
  * @param column_index Column index (use column_ids to resolve against schema)
  */
-template <pst::MessageClass V, typename T, typename Item = pst::TypedBag<V, T>>
-void set_output_column(PSTReadConcreteLocalState<V, T> &local_state, duckdb::DataChunk &output, Item &item,
-                       idx_t row_number, idx_t column_index);
+template <typename Item>
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, Item &item, idx_t row_number,
+                       idx_t column_index);
 
 /**
  * @brief Append a row to the output chunk
@@ -63,9 +62,8 @@ void set_output_column(PSTReadConcreteLocalState<V, T> &local_state, duckdb::Dat
  * @param item pstsdk object being read
  * @param row_number Row number
  */
-template <pst::MessageClass V, typename T>
-void into_row(PSTReadConcreteLocalState<V, T> &local_state, duckdb::DataChunk &output, pst::TypedBag<V, T> &item,
-              idx_t row_number);
+template <typename Item>
+void into_row(PSTReadLocalState &local_state, duckdb::DataChunk &output, Item &item, idx_t row_number);
 
 /**
  * @brief Make a struct value from a pstsdk item
@@ -76,8 +74,8 @@ void into_row(PSTReadConcreteLocalState<V, T> &local_state, duckdb::DataChunk &o
  * @param item pstsdk object being read
  * @return duckdb::Value
  */
-template <pst::MessageClass V, typename T, typename Item>
-duckdb::Value into_struct(PSTReadConcreteLocalState<V, T> &local_state, const LogicalType &t, Item item);
+template <typename Item>
+duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, Item item);
 
 /**
  * @brief Set common MAPI property values in a struct's child list

@@ -119,7 +119,7 @@ idx_t PSTReadConcreteLocalState<V, T>::emit_rows(DataChunk &output) {
 			break;
 		}
 
-		row_serializer::into_row<V, T>(*this, output, *item, i);
+		row_serializer::into_row<pst::TypedBag<V, T>>(*this, output, *item, i);
 
 		++rows;
 	}
@@ -127,7 +127,8 @@ idx_t PSTReadConcreteLocalState<V, T>::emit_rows(DataChunk &output) {
 	return rows;
 }
 
-template class PSTReadConcreteLocalState<pst::MessageClass::Contact>;
+template class PSTReadConcreteLocalState<pst::MessageClass::Note, pstsdk::folder>;
 template class PSTReadConcreteLocalState<pst::MessageClass::Note>;
+template class PSTReadConcreteLocalState<pst::MessageClass::Contact>;
 
 } // namespace intellekt::duckpst

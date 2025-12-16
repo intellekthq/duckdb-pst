@@ -4,6 +4,7 @@
 #include "pstsdk/ltp/propbag.h"
 #include "pstsdk/mapitags.h"
 #include "pstsdk/pst/pst.h"
+#include <type_traits>
 #include <unordered_map>
 
 namespace intellekt::duckpst::pst {
@@ -139,5 +140,16 @@ struct TypedBag {
 		return V;
 	}
 };
+
+// bag constexpr helpers (used for serializer)
+
+template <typename T>
+struct is_folder_bag : std::false_type {};
+
+template <MessageClass V>
+struct is_folder_bag<TypedBag<V, pstsdk::folder>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_folder_bag_v = is_folder_bag<T>::value;
 
 } // namespace intellekt::duckpst::pst
