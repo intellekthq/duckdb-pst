@@ -652,6 +652,89 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 
 template <>
 void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output,
+                       pst::TypedBag<pst::MessageClass::Appointment> &appointment, idx_t row_number,
+                       idx_t column_index) {
+	auto &prop_bag = appointment.bag;
+	auto schema_col = local_state.column_ids()[column_index];
+	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
+
+	prop_id named_prop_id = 0;
+
+	switch (schema_col) {
+	case static_cast<int>(schema::AppointmentProjection::location):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidLocation_A);
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::start_time):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidAppointmentStartWhole);
+		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::end_time):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidAppointmentEndWhole);
+		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::duration):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidAppointmentDuration);
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::all_day_event):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidAppointmentSubType);
+		output.SetValue(column_index, row_number, from_prop<bool>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::busy_status):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidBusyStatus);
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::meeting_workspace_url):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidMeetingWorkspaceUrl_A);
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::organizer_name):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidOwnerName_A);
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::required_attendees):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidToAttendeesString_A);
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::optional_attendees):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidCcAttendeesString_A);
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::is_recurring):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidRecurring);
+		output.SetValue(column_index, row_number, from_prop<bool>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::recurrence_pattern):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidRecurrencePattern_A);
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::is_private): {
+		// Using PR_SENSITIVITY to determine if private (2 = PRIVATE, 3 = CONFIDENTIAL)
+		auto sensitivity = from_prop<int32_t>(LogicalType::INTEGER, prop_bag, PR_SENSITIVITY);
+		if (!sensitivity.IsNull()) {
+			auto val = sensitivity.GetValue<int32_t>();
+			output.SetValue(column_index, row_number, Value::BOOLEAN(val >= 2));
+		} else {
+			output.SetValue(column_index, row_number, Value(nullptr));
+		}
+		break;
+	}
+	case static_cast<int>(schema::AppointmentProjection::response_status):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidResponseStatus);
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::AppointmentProjection::is_meeting):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_appointment, PidLidFInvited);
+		output.SetValue(column_index, row_number, from_prop<bool>(col_type, prop_bag, named_prop_id));
+		break;
+	default:
+		break;
+	}
+}
+
+template <>
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output,
                        pst::TypedBag<pst::MessageClass::Note, pstsdk::folder> &folder, idx_t row_number,
                        idx_t column_index) {
 	auto &prop_bag = folder.bag;
@@ -727,6 +810,11 @@ template void into_row<pst::TypedBag<pst::MessageClass::Note>>(PSTReadLocalState
                                                                duckdb::DataChunk &output,
                                                                pst::TypedBag<pst::MessageClass::Note> &item,
                                                                idx_t row_number);
+
+template void
+into_row<pst::TypedBag<pst::MessageClass::Appointment>>(PSTReadLocalState &local_state, duckdb::DataChunk &output,
+                                                        pst::TypedBag<pst::MessageClass::Appointment> &item,
+                                                        idx_t row_number);
 
 template void into_row<pst::TypedBag<pst::MessageClass::Contact>>(PSTReadLocalState &local_state,
                                                                   duckdb::DataChunk &output,

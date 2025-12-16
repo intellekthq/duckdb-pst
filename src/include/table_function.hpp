@@ -50,16 +50,16 @@ inline const LogicalType &output_schema(const PSTReadFunctionMode &mode) {
 		return schema::MESSAGE_SCHEMA;
 	case PSTReadFunctionMode::Contact:
 		return schema::CONTACT_SCHEMA;
+	case PSTReadFunctionMode::Appointment:
+		return schema::APPOINTMENT_SCHEMA;
 	default:
 		throw InvalidInputException("Unknown read function mode. Please report this bug on GitHub.");
 	}
 }
 
 static const map<string, PSTReadFunctionMode> FUNCTIONS = {
-    {"read_pst_folders", Folder},
-    {"read_pst_messages", Message},
-    {"read_pst_notes", Note},
-    {"read_pst_contacts", Contact},
+    {"read_pst_folders", Folder}, {"read_pst_messages", Message}, {"read_pst_appointments", Appointment},
+    {"read_pst_notes", Note},     {"read_pst_contacts", Contact},
 };
 
 static const named_parameter_type_map_t NAMED_PARAMETERS = {{"max_body_size_bytes", LogicalType::UBIGINT},

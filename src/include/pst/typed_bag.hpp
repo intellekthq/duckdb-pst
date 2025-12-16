@@ -1,6 +1,5 @@
 #pragma once
 
-#include "duckdb/common/exception.hpp"
 #include "pstsdk/ltp/propbag.h"
 #include "pstsdk/mapitags.h"
 #include "pstsdk/pst/pst.h"

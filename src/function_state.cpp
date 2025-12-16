@@ -130,5 +130,6 @@ idx_t PSTReadConcreteLocalState<V, T>::emit_rows(DataChunk &output) {
 template class PSTReadConcreteLocalState<pst::MessageClass::Note, pstsdk::folder>;
 template class PSTReadConcreteLocalState<pst::MessageClass::Note>;
 template class PSTReadConcreteLocalState<pst::MessageClass::Contact>;
+template class PSTReadConcreteLocalState<pst::MessageClass::Appointment>;
 
 } // namespace intellekt::duckpst

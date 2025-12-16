@@ -244,6 +244,31 @@ enum class ContactProjection {
 static const auto CONTACT_SCHEMA =
     LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) CONTACT_CHILDREN(SCHEMA_CHILD)});
 
+/* Appointment schema */
+#define APPOINTMENT_CHILDREN(LT)                                                                                       \
+	LT(location, LogicalType::VARCHAR)                                                                                 \
+	LT(start_time, LogicalType::TIMESTAMP_S)                                                                           \
+	LT(end_time, LogicalType::TIMESTAMP_S)                                                                             \
+	LT(duration, LogicalType::INTEGER)                                                                                 \
+	LT(all_day_event, LogicalType::BOOLEAN)                                                                            \
+	LT(busy_status, LogicalType::INTEGER)                                                                              \
+	LT(meeting_workspace_url, LogicalType::VARCHAR)                                                                    \
+	LT(organizer_name, LogicalType::VARCHAR)                                                                           \
+	LT(required_attendees, LogicalType::VARCHAR)                                                                       \
+	LT(optional_attendees, LogicalType::VARCHAR)                                                                       \
+	LT(is_recurring, LogicalType::BOOLEAN)                                                                             \
+	LT(recurrence_pattern, LogicalType::VARCHAR)                                                                       \
+	LT(is_private, LogicalType::BOOLEAN)                                                                               \
+	LT(response_status, LogicalType::INTEGER)                                                                          \
+	LT(is_meeting, LogicalType::BOOLEAN)
+
+enum class AppointmentProjection {
+	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) APPOINTMENT_CHILDREN(SCHEMA_CHILD_NAME)
+};
+
+static const auto APPOINTMENT_SCHEMA =
+    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) APPOINTMENT_CHILDREN(SCHEMA_CHILD)});
+
 /* Folder schema */
 
 #define FOLDER_CHILDREN(LT)                                                                                            \

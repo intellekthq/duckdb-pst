@@ -248,6 +248,9 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 	case PSTReadFunctionMode::Contact:
 		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Contact>>(global_state, ec);
 		break;
+	case PSTReadFunctionMode::Appointment:
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Appointment>>(global_state, ec);
+		break;
 	case PSTReadFunctionMode::Note:
 	default:
 		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Note>>(global_state, ec);
