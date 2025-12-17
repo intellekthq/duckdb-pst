@@ -84,6 +84,8 @@ static const auto PST_SCHEMA = LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD)})
 	/* TODO: these are computed properties (see spec: 2.4.3.2 Mapping between EntryID and NID) */                      \
 	/* LT(entry_id, LogicalType::BLOB) */                                                                              \
 	/* LT(parent_entry_id, LogicalType::BLOB) */                                                                       \
+	LT(subject, LogicalType::VARCHAR)                                                                                  \
+	LT(body, LogicalType::VARCHAR)                                                                                     \
 	LT(display_name, LogicalType::VARCHAR)                                                                             \
 	LT(comment, LogicalType::VARCHAR)                                                                                  \
 	LT(creation_time, LogicalType::TIMESTAMP_S)                                                                        \
@@ -131,7 +133,6 @@ enum class PSTCommonChildren {
 /* Message schema */
 
 #define MESSAGE_CHILDREN(LT)                                                                                           \
-	LT(subject, LogicalType::VARCHAR)                                                                                  \
 	LT(sender_name, LogicalType::VARCHAR)                                                                              \
 	LT(sender_email_address, LogicalType::VARCHAR)                                                                     \
 	LT(message_delivery_time, LogicalType::TIMESTAMP_S)                                                                \
@@ -142,7 +143,6 @@ enum class PSTCommonChildren {
 	LT(message_size, LogicalType::UBIGINT)                                                                             \
 	LT(has_attachments, LogicalType::BOOLEAN)                                                                          \
 	LT(attachment_count, LogicalType::UINTEGER)                                                                        \
-	LT(body, LogicalType::VARCHAR)                                                                                     \
 	LT(body_html, LogicalType::VARCHAR)                                                                                \
 	LT(internet_message_id, LogicalType::VARCHAR)                                                                      \
 	LT(conversation_topic, LogicalType::VARCHAR)                                                                       \
@@ -268,6 +268,21 @@ enum class AppointmentProjection {
 
 static const auto APPOINTMENT_SCHEMA =
     LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) APPOINTMENT_CHILDREN(SCHEMA_CHILD)});
+
+/* Sticky Note schema */
+#define STICKY_NOTE_CHILDREN(LT)                                                                                       \
+	LT(note_color, LogicalType::INTEGER)                                                                               \
+	LT(note_width, LogicalType::INTEGER)                                                                               \
+	LT(note_height, LogicalType::INTEGER)                                                                              \
+	LT(note_x, LogicalType::INTEGER)                                                                                   \
+	LT(note_y, LogicalType::INTEGER)
+
+enum class StickyNoteProjection {
+	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) STICKY_NOTE_CHILDREN(SCHEMA_CHILD_NAME)
+};
+
+static const auto STICKY_NOTE_SCHEMA =
+    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) STICKY_NOTE_CHILDREN(SCHEMA_CHILD)});
 
 /* Folder schema */
 
