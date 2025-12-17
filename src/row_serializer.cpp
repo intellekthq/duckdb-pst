@@ -31,6 +31,7 @@ duckdb::Value from_prop(const LogicalType &t, pstsdk::const_property_object &bag
 	if constexpr (std::is_integral_v<T>) {
 		if (t.id() == LogicalTypeId::ENUM) {
 			auto as_u64 = boost::numeric_cast<uint64_t>(*value);
+
 			if (as_u64 >= EnumType::GetSize(t))
 				return duckdb_value;
 
@@ -145,7 +146,7 @@ duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, 
 			values[col] = from_prop<std::vector<pstsdk::byte>>(col_type, attachment_prop_bag, PR_ATTACH_DATA_BIN);
 			break;
 		default:
-			set_common_struct_fields(values, attachment_prop_bag, col_type, col);
+			break;
 		}
 	}
 
@@ -161,6 +162,9 @@ duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, 
 		auto &col_type = StructType::GetChildType(t, col);
 
 		switch (col) {
+		case static_cast<int>(schema::RecipientProjection::display_name):
+			values[col] = from_prop<std::string>(col_type, recipient_prop_bag, PR_DISPLAY_NAME_A);
+			break;
 		case static_cast<int>(schema::RecipientProjection::account_name):
 			values[col] = from_prop<std::string>(col_type, recipient_prop_bag, PR_ACCOUNT_A);
 			break;
@@ -177,98 +181,10 @@ duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, 
 			values[col] = from_prop<int32_t>(col_type, recipient_prop_bag, PR_RECIPIENT_TYPE);
 			break;
 		default:
-			set_common_struct_fields(values, recipient_prop_bag, col_type, col);
+			break;
 		}
 	}
 	return Value::STRUCT(t, values);
-}
-
-void set_common_struct_fields(vector<Value> &values, pstsdk::const_property_object &bag, const LogicalType &col_type,
-                              idx_t col) {
-	switch (col) {
-	case static_cast<int>(schema::CommonProjection::display_name):
-		values[col] = from_prop<std::string>(col_type, bag, PR_DISPLAY_NAME_A);
-		break;
-	case static_cast<int>(schema::CommonProjection::comment):
-		values[col] = from_prop<std::string>(col_type, bag, PR_COMMENT_A);
-		break;
-	case static_cast<int>(schema::CommonProjection::creation_time):
-		values[col] = from_prop<pstsdk::ulonglong>(col_type, bag, PR_CREATION_TIME);
-		break;
-	case static_cast<int>(schema::CommonProjection::last_modified):
-		values[col] = from_prop<pstsdk::ulonglong>(col_type, bag, PR_LAST_MODIFICATION_TIME);
-		break;
-	default:
-		break;
-	}
-}
-
-template <>
-void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::const_property_object &bag,
-                       idx_t row_number, idx_t column_index) {
-	auto schema_col = local_state.column_ids()[column_index];
-	auto &pst_bag = local_state.pst->get_property_bag();
-	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
-	auto read_size = local_state.global_state.bind_data.max_body_size_bytes();
-
-	switch (schema_col) {
-	case static_cast<int>(schema::PSTCommonChildren::pst_path):
-		output.SetValue(column_index, row_number, Value(local_state.partition->file.path));
-		break;
-	case static_cast<int>(schema::PSTCommonChildren::pst_name):
-		output.SetValue(
-		    column_index, row_number,
-		    from_prop<std::string>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_DISPLAY_NAME_A));
-		break;
-	case static_cast<int>(schema::PSTCommonChildren::record_key):
-		output.SetValue(
-		    column_index, row_number,
-		    from_prop<std::vector<pstsdk::byte>>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_RECORD_KEY));
-		break;
-	case static_cast<int>(schema::PSTCommonChildren::display_name):
-		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, bag, PR_DISPLAY_NAME_A));
-		break;
-	case static_cast<int>(schema::PSTCommonChildren::comment):
-		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, bag, PR_COMMENT_A));
-		break;
-	case static_cast<int>(schema::PSTCommonChildren::creation_time):
-		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, bag, PR_CREATION_TIME));
-		break;
-	case static_cast<int>(schema::PSTCommonChildren::last_modified):
-		output.SetValue(column_index, row_number,
-		                from_prop<pstsdk::ulonglong>(col_type, bag, PR_LAST_MODIFICATION_TIME));
-		break;
-	case static_cast<int>(schema::PSTCommonChildren::importance):
-		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, bag, PR_IMPORTANCE));
-		break;
-	case static_cast<int>(schema::PSTCommonChildren::priority):
-		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, bag, PR_PRIORITY));
-		break;
-	case static_cast<int>(schema::PSTCommonChildren::sensitivity):
-		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, bag, PR_SENSITIVITY));
-		break;
-	case static_cast<int>(schema::PSTCommonChildren::subject):
-		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, bag, PR_SUBJECT_A));
-		break;
-	case static_cast<int>(schema::PSTCommonChildren::body):
-		if (!bag.prop_exists(PR_BODY_A)) {
-			output.SetValue(column_index, row_number, Value(nullptr));
-			return;
-		}
-		{
-			auto body_size = bag.size(PR_BODY_A);
-
-			if (read_size == 0)
-				read_size = body_size;
-
-			read_size = std::min<idx_t>(read_size, body_size);
-			output.SetValue(column_index, row_number,
-			                from_prop_stream<std::string>(col_type, bag, PR_BODY_A, read_size));
-		}
-		break;
-	default:
-		break;
-	}
 }
 
 template <>
@@ -283,14 +199,11 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		output.SetValue(column_index, row_number, Value(local_state.partition->file.path));
 		break;
 	case static_cast<int>(schema::PSTProjection::pst_name):
-		output.SetValue(
-		    column_index, row_number,
-		    from_prop<std::string>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_DISPLAY_NAME_A));
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, pst_bag, PR_DISPLAY_NAME_A));
 		break;
 	case static_cast<int>(schema::PSTProjection::record_key):
-		output.SetValue(
-		    column_index, row_number,
-		    from_prop<std::vector<pstsdk::byte>>(col_type, const_cast<pstsdk::property_bag &>(pst_bag), PR_RECORD_KEY));
+		output.SetValue(column_index, row_number,
+		                from_prop<std::vector<pstsdk::byte>>(col_type, pst_bag, PR_RECORD_KEY));
 		break;
 	default:
 		break;
@@ -298,65 +211,117 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 }
 
 template <>
-void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output,
-                       pst::TypedBag<pst::MessageClass::Note> &msg, idx_t row_number, idx_t column_index) {
-	auto &prop_bag = msg.bag;
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output, pstsdk::message &msg,
+                       idx_t row_number, idx_t column_index) {
+	auto &prop_bag = msg.get_property_bag();
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 	auto read_size = local_state.global_state.bind_data.max_body_size_bytes();
 
 	switch (schema_col) {
-	case static_cast<int>(schema::MessageProjection::sender_name):
+	case static_cast<int>(schema::NoteProjection::display_name):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_DISPLAY_NAME_A));
+		break;
+	case static_cast<int>(schema::NoteProjection::comment):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_COMMENT_A));
+		break;
+	case static_cast<int>(schema::NoteProjection::creation_time):
+		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, prop_bag, PR_CREATION_TIME));
+		break;
+	case static_cast<int>(schema::NoteProjection::last_modified):
+		output.SetValue(column_index, row_number,
+		                from_prop<pstsdk::ulonglong>(col_type, prop_bag, PR_LAST_MODIFICATION_TIME));
+		break;
+	case static_cast<int>(schema::NoteProjection::importance):
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_IMPORTANCE));
+		break;
+	case static_cast<int>(schema::NoteProjection::priority): {
+		// This can be -1, 0, 1, so we have to do a little extra work
+		auto priority = prop_bag.read_prop_if_exists<int32_t>(PR_PRIORITY);
+		if (priority) {
+			auto enum_idx = *priority + 1;
+			if (enum_idx < EnumType::GetSize(schema::PRIORITY_ENUM)) {
+				output.SetValue(column_index, row_number, Value::ENUM(enum_idx, schema::PRIORITY_ENUM));
+				return;
+			}
+		}
+		output.SetValue(column_index, row_number, Value(nullptr));
+		break;
+	}
+	case static_cast<int>(schema::NoteProjection::sensitivity):
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_SENSITIVITY));
+		break;
+	case static_cast<int>(schema::NoteProjection::subject):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_SUBJECT_A));
+		break;
+	case static_cast<int>(schema::NoteProjection::body):
+		if (!prop_bag.prop_exists(PR_BODY_A)) {
+			output.SetValue(column_index, row_number, Value(nullptr));
+			return;
+		}
+		{
+			auto body_size = prop_bag.size(PR_BODY_A);
+			if (read_size == 0)
+				read_size = prop_bag.size(PR_BODY_A);
+
+			read_size = std::min<idx_t>(read_size, body_size);
+			output.SetValue(column_index, row_number,
+			                from_prop_stream<std::string>(col_type, prop_bag, PR_BODY_A, read_size));
+		}
+		break;
+	case static_cast<int>(schema::NoteProjection::sender_name):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_SENDER_NAME_A));
 		break;
-	case static_cast<int>(schema::MessageProjection::sender_email_address):
+	case static_cast<int>(schema::NoteProjection::sender_email_address):
 		output.SetValue(column_index, row_number,
 		                from_prop<std::string>(col_type, prop_bag, PR_SENDER_EMAIL_ADDRESS_A));
 		break;
-	case static_cast<int>(schema::MessageProjection::message_delivery_time):
+	case static_cast<int>(schema::NoteProjection::message_delivery_time):
 		output.SetValue(column_index, row_number,
 		                from_prop<pstsdk::ulonglong>(col_type, prop_bag, PR_MESSAGE_DELIVERY_TIME));
 		break;
-	case static_cast<int>(schema::MessageProjection::message_class):
+	case static_cast<int>(schema::NoteProjection::message_class):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_MESSAGE_CLASS_A));
 		break;
-	case static_cast<int>(schema::MessageProjection::message_flags):
+	case static_cast<int>(schema::NoteProjection::message_flags):
 		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_MESSAGE_FLAGS));
 		break;
-	case static_cast<int>(schema::MessageProjection::message_size):
-		output.SetValue(column_index, row_number, Value::UBIGINT(msg.sdk_object->size()));
+	case static_cast<int>(schema::NoteProjection::message_size):
+		output.SetValue(column_index, row_number, Value::UBIGINT(msg.size()));
 		break;
-	case static_cast<int>(schema::MessageProjection::has_attachments): {
-		size_t attachment_count = msg.sdk_object->get_attachment_count();
+	case static_cast<int>(schema::NoteProjection::has_attachments): {
+		size_t attachment_count = msg.get_attachment_count();
 		output.SetValue(column_index, row_number, Value::BOOLEAN(attachment_count > 0));
 		break;
 	}
-	case static_cast<int>(schema::MessageProjection::attachment_count): {
-		size_t attachment_count = msg.sdk_object->get_attachment_count();
+	case static_cast<int>(schema::NoteProjection::attachment_count): {
+		size_t attachment_count = msg.get_attachment_count();
 		output.SetValue(column_index, row_number, Value::UBIGINT(attachment_count));
 		break;
 	}
-	case static_cast<int>(schema::MessageProjection::body_html):
+	case static_cast<int>(schema::NoteProjection::body_html):
 		if (!prop_bag.prop_exists(PR_HTML)) {
 			output.SetValue(column_index, row_number, Value(nullptr));
 			return;
 		}
-
-		if (read_size == 0)
-			read_size = msg.sdk_object->html_body_size();
-		read_size = std::min<idx_t>(read_size, msg.sdk_object->html_body_size());
-		output.SetValue(column_index, row_number,
-		                from_prop_stream<std::string>(col_type, prop_bag, PR_HTML, read_size));
+		{
+			auto body_size = prop_bag.size(PR_HTML);
+			if (read_size == 0)
+				read_size = body_size;
+			read_size = std::min<idx_t>(read_size, body_size);
+			output.SetValue(column_index, row_number,
+			                from_prop_stream<std::string>(col_type, prop_bag, PR_HTML, read_size));
+		}
 		break;
-	case static_cast<int>(schema::MessageProjection::internet_message_id):
+	case static_cast<int>(schema::NoteProjection::internet_message_id):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_INTERNET_MESSAGE_ID));
 		break;
-	case static_cast<int>(schema::MessageProjection::conversation_topic):
+	case static_cast<int>(schema::NoteProjection::conversation_topic):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_CONVERSATION_TOPIC_A));
 		break;
-	case static_cast<int>(schema::MessageProjection::recipients): {
+	case static_cast<int>(schema::NoteProjection::recipients): {
 		vector<Value> recipients;
-		for (auto it = msg.sdk_object->recipient_begin(); it != msg.sdk_object->recipient_end(); ++it) {
+		for (auto it = msg.recipient_begin(); it != msg.recipient_end(); ++it) {
 			try {
 				recipients.emplace_back(into_struct(local_state, schema::RECIPIENT_SCHEMA, *it));
 			} catch (std::exception &e) {
@@ -367,9 +332,9 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		output.SetValue(column_index, row_number, Value::LIST(schema::RECIPIENT_SCHEMA, recipients));
 		break;
 	}
-	case static_cast<int>(schema::MessageProjection::attachments): {
+	case static_cast<int>(schema::NoteProjection::attachments): {
 		vector<Value> attachments;
-		for (auto it = msg.sdk_object->attachment_begin(); it != msg.sdk_object->attachment_end(); ++it) {
+		for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
 			try {
 				attachments.emplace_back(into_struct(local_state, schema::ATTACHMENT_SCHEMA, *it));
 			} catch (std::exception &e) {
@@ -889,10 +854,10 @@ void into_row(PSTReadLocalState &local_state, duckdb::DataChunk &output, Item &i
 		// Bind virtual columns + node_id (should be 'infallible' as long as the file isn't borked)
 		switch (schema_col) {
 		case static_cast<int>(schema::PSTProjection::node_id):
-		case schema::PST_ITEM_NODE_ID:
+		case schema::PST_VCOL_NODE_ID:
 			output.SetValue(col_idx, row_number, Value::UINTEGER(item.node.get_id()));
 			break;
-		case schema::PST_PARTITION_INDEX:
+		case schema::PST_VCOL_PARTITION_INDEX:
 			output.SetValue(col_idx, row_number, Value::UBIGINT(local_state.partition->partition_index));
 			break;
 		default:
@@ -900,11 +865,14 @@ void into_row(PSTReadLocalState &local_state, duckdb::DataChunk &output, Item &i
 				// Bind PST attributes
 				set_output_column<pstsdk::pst>(local_state, output, *local_state.pst, row_number, col_idx);
 
-				// If message-like, bind common message attributes
+				// If message-like, bind IPM.Note base attributes
 				if constexpr (!pst::is_folder_bag_v<Item>) {
-					// Bind common columns (message only)
-					set_output_column<const_property_object>(local_state, output, item.bag, row_number, col_idx);
+					set_output_column<pstsdk::message>(local_state, output, *item.sdk_object, row_number, col_idx);
 				}
+
+				// If reading as note, we are already done
+				if constexpr (pst::is_base_msg_bag_v<Item>)
+					continue;
 
 				set_output_column(local_state, output, item, row_number, col_idx);
 			} catch (std::exception &e) {

@@ -251,6 +251,12 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 	case PSTReadFunctionMode::Appointment:
 		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Appointment>>(global_state, ec);
 		break;
+	case PSTReadFunctionMode::Task:
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Task>>(global_state, ec);
+		break;
+	case PSTReadFunctionMode::StickyNote:
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::StickyNote>>(global_state, ec);
+		break;
 	case PSTReadFunctionMode::Note:
 	default:
 		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Note>>(global_state, ec);
@@ -325,16 +331,16 @@ virtual_column_map_t PSTVirtualColumns(ClientContext &ctx, optional_ptr<Function
 
 	virtual_column_map_t virtual_cols;
 
-	virtual_cols.emplace(make_pair(schema::PST_ITEM_NODE_ID, TableColumn("__node_id", schema::PST_ITEM_NODE_ID_TYPE)));
+	virtual_cols.emplace(make_pair(schema::PST_VCOL_NODE_ID, TableColumn("__node_id", schema::PST_VCOL_NODE_ID_TYPE)));
 	virtual_cols.emplace(
-	    make_pair(schema::PST_PARTITION_INDEX, TableColumn("__partition", schema::PST_PARTITION_INDEX_TYPE)));
+	    make_pair(schema::PST_VCOL_PARTITION_INDEX, TableColumn("__partition", schema::PST_VCOL_PARTITION_INDEX_TYPE)));
 
 	return virtual_cols;
 }
 
 vector<column_t> PSTRowIDColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data) {
 	DUCKDB_LOG_DEBUG(ctx, "get_row_id_columns [PSTRowIDColumns]");
-	return {schema::PST_ITEM_NODE_ID, schema::PST_PARTITION_INDEX};
+	return {schema::PST_VCOL_NODE_ID, schema::PST_VCOL_PARTITION_INDEX};
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output) {

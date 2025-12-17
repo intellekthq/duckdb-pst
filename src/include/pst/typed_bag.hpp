@@ -151,4 +151,15 @@ struct is_folder_bag<TypedBag<V, pstsdk::folder>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_folder_bag_v = is_folder_bag<T>::value;
 
+template <typename T>
+struct is_base_msg_bag : std::false_type {};
+
+template <MessageClass V>
+struct is_base_msg_bag<TypedBag<V, pstsdk::message>> {
+	static inline const bool value = V == MessageClass::Note;
+};
+
+template <typename T>
+inline constexpr bool is_base_msg_bag_v = is_base_msg_bag<T>::value;
+
 } // namespace intellekt::duckpst::pst

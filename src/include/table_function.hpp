@@ -47,7 +47,7 @@ inline const LogicalType &output_schema(const PSTReadFunctionMode &mode) {
 		return schema::FOLDER_SCHEMA;
 	case PSTReadFunctionMode::Note:
 	case PSTReadFunctionMode::Message:
-		return schema::MESSAGE_SCHEMA;
+		return schema::NOTE_SCHEMA;
 	case PSTReadFunctionMode::Contact:
 		return schema::CONTACT_SCHEMA;
 	case PSTReadFunctionMode::Appointment:

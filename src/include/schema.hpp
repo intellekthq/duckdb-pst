@@ -9,11 +9,11 @@ using namespace duckdb;
 /* Virtual columns */
 // TODO: this is an extern and we want constexpr, so copy it for now
 static constexpr column_t DUCKDB_VIRTUAL_COLUMN_START = UINT64_C(9223372036854775808);
-static constexpr auto PST_PARTITION_INDEX = DUCKDB_VIRTUAL_COLUMN_START;
-static constexpr auto PST_PARTITION_INDEX_TYPE = LogicalType::UBIGINT;
+static constexpr auto PST_VCOL_PARTITION_INDEX = DUCKDB_VIRTUAL_COLUMN_START;
+static constexpr auto PST_VCOL_PARTITION_INDEX_TYPE = LogicalType::UBIGINT;
 
-static constexpr auto PST_ITEM_NODE_ID = DUCKDB_VIRTUAL_COLUMN_START + 1;
-static constexpr auto PST_ITEM_NODE_ID_TYPE = LogicalType::UINTEGER;
+static constexpr auto PST_VCOL_NODE_ID = DUCKDB_VIRTUAL_COLUMN_START + 1;
+static constexpr auto PST_VCOL_NODE_ID_TYPE = LogicalType::UINTEGER;
 
 /* Enum schemas */
 inline LogicalType RecipientTypeSchema() {
@@ -77,50 +77,19 @@ static const auto ATTACH_METHOD_ENUM = AttachMethodSchema();
 #define SCHEMA_CHILD(name, type)     {#name, type},
 #define SCHEMA_CHILD_NAME(name, ...) name,
 
-/* Per-file PST attributes */
-
-#define PST_CHILDREN(LT)                                                                                               \
-	LT(pst_path, LogicalType::VARCHAR)                                                                                 \
-	LT(pst_name, LogicalType::VARCHAR)                                                                                 \
-	LT(record_key, LogicalType::BLOB)                                                                                  \
-	LT(node_id, LogicalType::UINTEGER)
-
-enum class PSTProjection { PST_CHILDREN(SCHEMA_CHILD_NAME) };
-static const auto PST_SCHEMA = LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD)});
-
-/* Common MAPI attributes schema */
-
-#define COMMON_CHILDREN(LT)                                                                                            \
-	/* TODO: these are computed properties (see spec: 2.4.3.2 Mapping between EntryID and NID) */                      \
-	/* LT(entry_id, LogicalType::BLOB) */                                                                              \
-	/* LT(parent_entry_id, LogicalType::BLOB) */                                                                       \
-	LT(subject, LogicalType::VARCHAR)                                                                                  \
-	LT(body, LogicalType::VARCHAR)                                                                                     \
-	LT(display_name, LogicalType::VARCHAR)                                                                             \
-	LT(comment, LogicalType::VARCHAR)                                                                                  \
-	LT(importance, IMPORTANCE_ENUM)                                                                                    \
-	LT(priority, PRIORITY_ENUM)                                                                                        \
-	LT(sensitivity, SENSITIVITY_ENUM)                                                                                  \
-	LT(creation_time, LogicalType::TIMESTAMP_S)                                                                        \
-	LT(last_modified, LogicalType::TIMESTAMP_S)
-
-enum class CommonProjection { COMMON_CHILDREN(SCHEMA_CHILD_NAME) NUM_FIELDS };
-
-static const auto COMMON_SCHEMA = LogicalType::STRUCT({COMMON_CHILDREN(SCHEMA_CHILD)});
-
 /* Recipient struct schema */
 
 #define RECIPIENT_CHILDREN(LT)                                                                                         \
+	LT(display_name, LogicalType::VARCHAR)                                                                             \
 	LT(account_name, LogicalType::VARCHAR)                                                                             \
 	LT(email_address, LogicalType::VARCHAR)                                                                            \
 	LT(address_type, LogicalType::VARCHAR)                                                                             \
 	LT(recipient_type, RECIPIENT_TYPE_ENUM)                                                                            \
 	LT(recipient_type_raw, LogicalType::INTEGER)
 
-enum class RecipientProjection { COMMON_CHILDREN(SCHEMA_CHILD_NAME) RECIPIENT_CHILDREN(SCHEMA_CHILD_NAME) };
+enum class RecipientProjection { RECIPIENT_CHILDREN(SCHEMA_CHILD_NAME) };
 
-static const auto RECIPIENT_SCHEMA =
-    LogicalType::STRUCT({COMMON_CHILDREN(SCHEMA_CHILD) RECIPIENT_CHILDREN(SCHEMA_CHILD)});
+static const auto RECIPIENT_SCHEMA = LogicalType::STRUCT({RECIPIENT_CHILDREN(SCHEMA_CHILD)});
 
 /* Attachment struct schema */
 
@@ -137,15 +106,32 @@ enum class AttachmentProjection { ATTACHMENT_CHILDREN(SCHEMA_CHILD_NAME) };
 
 static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({ATTACHMENT_CHILDREN(SCHEMA_CHILD)});
 
-/* Common fields in message and folder */
-enum class PSTCommonChildren {
+/* Per-file PST attributes */
 
-	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) NUM_FIELDS
-};
+#define PST_CHILDREN(LT)                                                                                               \
+	LT(pst_path, LogicalType::VARCHAR)                                                                                 \
+	LT(pst_name, LogicalType::VARCHAR)                                                                                 \
+	LT(record_key, LogicalType::BLOB)                                                                                  \
+	LT(node_id, LogicalType::UINTEGER)
 
-/* Message schema */
+enum class PSTProjection { PST_CHILDREN(SCHEMA_CHILD_NAME) };
+static const auto PST_SCHEMA = LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD)});
 
-#define MESSAGE_CHILDREN(LT)                                                                                           \
+/* Base IPM.Note / Message schema, the base type for all PST reads that are not folders */
+
+#define NOTE_CHILDREN(LT)                                                                                              \
+	/* TODO: these are computed properties (see spec: 2.4.3.2 Mapping between EntryID and NID) */                      \
+	/* LT(entry_id, LogicalType::BLOB) */                                                                              \
+	/* LT(parent_entry_id, LogicalType::BLOB) */                                                                       \
+	LT(subject, LogicalType::VARCHAR)                                                                                  \
+	LT(body, LogicalType::VARCHAR)                                                                                     \
+	LT(display_name, LogicalType::VARCHAR)                                                                             \
+	LT(comment, LogicalType::VARCHAR)                                                                                  \
+	LT(importance, IMPORTANCE_ENUM)                                                                                    \
+	LT(priority, PRIORITY_ENUM)                                                                                        \
+	LT(sensitivity, SENSITIVITY_ENUM)                                                                                  \
+	LT(creation_time, LogicalType::TIMESTAMP_S)                                                                        \
+	LT(last_modified, LogicalType::TIMESTAMP_S)                                                                        \
 	LT(sender_name, LogicalType::VARCHAR)                                                                              \
 	LT(sender_email_address, LogicalType::VARCHAR)                                                                     \
 	LT(message_delivery_time, LogicalType::TIMESTAMP_S)                                                                \
@@ -160,12 +146,9 @@ enum class PSTCommonChildren {
 	LT(recipients, LogicalType::LIST(RECIPIENT_SCHEMA))                                                                \
 	LT(attachments, LogicalType::LIST(ATTACHMENT_SCHEMA))
 
-enum class MessageProjection {
-	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) MESSAGE_CHILDREN(SCHEMA_CHILD_NAME)
-};
+enum class NoteProjection { PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) };
 
-static const auto MESSAGE_SCHEMA =
-    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) MESSAGE_CHILDREN(SCHEMA_CHILD)});
+static const auto NOTE_SCHEMA = LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) NOTE_CHILDREN(SCHEMA_CHILD)});
 
 /* Contact schema */
 
@@ -249,11 +232,11 @@ static const auto MESSAGE_SCHEMA =
 	LT(other_address_po_box, LogicalType::VARCHAR)
 
 enum class ContactProjection {
-	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) CONTACT_CHILDREN(SCHEMA_CHILD_NAME)
+	PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) CONTACT_CHILDREN(SCHEMA_CHILD_NAME)
 };
 
 static const auto CONTACT_SCHEMA =
-    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) CONTACT_CHILDREN(SCHEMA_CHILD)});
+    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) NOTE_CHILDREN(SCHEMA_CHILD) CONTACT_CHILDREN(SCHEMA_CHILD)});
 
 /* Appointment schema */
 #define APPOINTMENT_CHILDREN(LT)                                                                                       \
@@ -274,11 +257,11 @@ static const auto CONTACT_SCHEMA =
 	LT(is_meeting, LogicalType::BOOLEAN)
 
 enum class AppointmentProjection {
-	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) APPOINTMENT_CHILDREN(SCHEMA_CHILD_NAME)
+	PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) APPOINTMENT_CHILDREN(SCHEMA_CHILD_NAME)
 };
 
 static const auto APPOINTMENT_SCHEMA =
-    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) APPOINTMENT_CHILDREN(SCHEMA_CHILD)});
+    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) NOTE_CHILDREN(SCHEMA_CHILD) APPOINTMENT_CHILDREN(SCHEMA_CHILD)});
 
 /* Sticky Note schema */
 #define STICKY_NOTE_CHILDREN(LT)                                                                                       \
@@ -289,11 +272,11 @@ static const auto APPOINTMENT_SCHEMA =
 	LT(note_y, LogicalType::INTEGER)
 
 enum class StickyNoteProjection {
-	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) STICKY_NOTE_CHILDREN(SCHEMA_CHILD_NAME)
+	PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) STICKY_NOTE_CHILDREN(SCHEMA_CHILD_NAME)
 };
 
 static const auto STICKY_NOTE_SCHEMA =
-    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) STICKY_NOTE_CHILDREN(SCHEMA_CHILD)});
+    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) NOTE_CHILDREN(SCHEMA_CHILD) STICKY_NOTE_CHILDREN(SCHEMA_CHILD)});
 
 /* Task schema */
 #define TASK_CHILDREN(LT)                                                                                              \
@@ -314,11 +297,11 @@ static const auto STICKY_NOTE_SCHEMA =
 	LT(last_update, LogicalType::TIMESTAMP_S)
 
 enum class TaskProjection {
-	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) TASK_CHILDREN(SCHEMA_CHILD_NAME)
+	PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) TASK_CHILDREN(SCHEMA_CHILD_NAME)
 };
 
 static const auto TASK_SCHEMA =
-    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) TASK_CHILDREN(SCHEMA_CHILD)});
+    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) NOTE_CHILDREN(SCHEMA_CHILD) TASK_CHILDREN(SCHEMA_CHILD)});
 
 /* Folder schema */
 

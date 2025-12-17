@@ -22,6 +22,8 @@ PSTReadGlobalState::PSTReadGlobalState(const PSTReadTableFunctionData &bind_data
 	for (auto &part : bind_data.partitions.get()) {
 		sync_partitions->push(part);
 	}
+
+	nodes_processed = 0;
 }
 
 std::optional<PSTInputPartition> PSTReadGlobalState::take_partition() {
