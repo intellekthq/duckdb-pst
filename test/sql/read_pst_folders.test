@@ -1,0 +1,29 @@
+# name: test/sql/read_pst_folders.test
+# description: Test read_pst_folders table function
+# group: [pst]
+
+require pst
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+load pst;
+
+# There should be 16 folders
+query I
+SELECT count(*) FROM read_pst_folders('test/unittest.pst')
+----
+16
+
+# Test that node_id is unique
+query I
+SELECT count(DISTINCT node_id) FROM read_pst_folders('test/unittest.pst')
+----
+16
+
+# This should be one per PST
+query T
+SELECT DISTINCT pst_name FROM read_pst_folders('test/unittest.pst')
+----
+Outlook Data File
