@@ -94,11 +94,11 @@ static const auto RECIPIENT_SCHEMA = LogicalType::STRUCT({RECIPIENT_CHILDREN(SCH
 /* Attachment struct schema */
 
 #define ATTACHMENT_CHILDREN(LT)                                                                                        \
-	LT(attach_content_id, LogicalType::VARCHAR)                                                                        \
-	LT(attach_method, ATTACH_METHOD_ENUM)                                                                              \
 	LT(filename, LogicalType::VARCHAR)                                                                                 \
 	LT(mime_type, LogicalType::VARCHAR)                                                                                \
 	LT(size, LogicalType::UBIGINT)                                                                                     \
+	LT(attach_content_id, LogicalType::VARCHAR)                                                                        \
+	LT(attach_method, ATTACH_METHOD_ENUM)                                                                              \
 	LT(is_message, LogicalType::BOOLEAN)                                                                               \
 	LT(bytes, LogicalType::BLOB)
 
@@ -125,26 +125,26 @@ static const auto PST_SCHEMA = LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD)})
 	/* LT(parent_entry_id, LogicalType::BLOB) */                                                                       \
 	LT(subject, LogicalType::VARCHAR)                                                                                  \
 	LT(body, LogicalType::VARCHAR)                                                                                     \
+	LT(body_html, LogicalType::VARCHAR)                                                                                \
 	LT(display_name, LogicalType::VARCHAR)                                                                             \
 	LT(comment, LogicalType::VARCHAR)                                                                                  \
+	LT(sender_name, LogicalType::VARCHAR)                                                                              \
+	LT(sender_email_address, LogicalType::VARCHAR)                                                                     \
+	LT(recipients, LogicalType::LIST(RECIPIENT_SCHEMA))                                                                \
+	LT(has_attachments, LogicalType::BOOLEAN)                                                                          \
+	LT(attachment_count, LogicalType::UINTEGER)                                                                        \
+	LT(attachments, LogicalType::LIST(ATTACHMENT_SCHEMA))                                                              \
 	LT(importance, IMPORTANCE_ENUM)                                                                                    \
 	LT(priority, PRIORITY_ENUM)                                                                                        \
 	LT(sensitivity, SENSITIVITY_ENUM)                                                                                  \
 	LT(creation_time, LogicalType::TIMESTAMP_S)                                                                        \
 	LT(last_modified, LogicalType::TIMESTAMP_S)                                                                        \
-	LT(sender_name, LogicalType::VARCHAR)                                                                              \
-	LT(sender_email_address, LogicalType::VARCHAR)                                                                     \
 	LT(message_delivery_time, LogicalType::TIMESTAMP_S)                                                                \
 	LT(message_class, LogicalType::VARCHAR)                                                                            \
 	LT(message_flags, LogicalType::INTEGER)                                                                            \
 	LT(message_size, LogicalType::UBIGINT)                                                                             \
-	LT(has_attachments, LogicalType::BOOLEAN)                                                                          \
-	LT(attachment_count, LogicalType::UINTEGER)                                                                        \
-	LT(body_html, LogicalType::VARCHAR)                                                                                \
-	LT(internet_message_id, LogicalType::VARCHAR)                                                                      \
 	LT(conversation_topic, LogicalType::VARCHAR)                                                                       \
-	LT(recipients, LogicalType::LIST(RECIPIENT_SCHEMA))                                                                \
-	LT(attachments, LogicalType::LIST(ATTACHMENT_SCHEMA))
+	LT(internet_message_id, LogicalType::VARCHAR)
 
 enum class NoteProjection { PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) };
 
@@ -153,83 +153,83 @@ static const auto NOTE_SCHEMA = LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) 
 /* Contact schema */
 
 #define CONTACT_CHILDREN(LT)                                                                                           \
-	LT(account_name, LogicalType::VARCHAR)                                                                             \
-	LT(callback_number, LogicalType::VARCHAR)                                                                          \
-	LT(conversation_prohibited, LogicalType::BOOLEAN)                                                                  \
-	LT(disclose_recipients, LogicalType::BOOLEAN)                                                                      \
-	LT(generation_suffix, LogicalType::VARCHAR)                                                                        \
+	LT(display_name_prefix, LogicalType::VARCHAR)                                                                      \
 	LT(given_name, LogicalType::VARCHAR)                                                                               \
-	LT(government_id_number, LogicalType::VARCHAR)                                                                     \
-	LT(business_telephone, LogicalType::VARCHAR)                                                                       \
-	LT(home_telephone, LogicalType::VARCHAR)                                                                           \
+	LT(middle_name, LogicalType::VARCHAR)                                                                              \
+	LT(surname, LogicalType::VARCHAR)                                                                                  \
+	LT(generation_suffix, LogicalType::VARCHAR)                                                                        \
 	LT(initials, LogicalType::VARCHAR)                                                                                 \
-	LT(keyword, LogicalType::VARCHAR)                                                                                  \
+	LT(nickname, LogicalType::VARCHAR)                                                                                 \
+	LT(preferred_by_name, LogicalType::VARCHAR)                                                                        \
+	LT(account_name, LogicalType::VARCHAR)                                                                             \
+	LT(original_display_name, LogicalType::VARCHAR)                                                                    \
+	LT(transmittable_display_name, LogicalType::VARCHAR)                                                               \
+	LT(mhs_common_name, LogicalType::VARCHAR)                                                                          \
+	LT(government_id_number, LogicalType::VARCHAR)                                                                     \
+	LT(organizational_id_number, LogicalType::VARCHAR)                                                                 \
+	LT(birthday, LogicalType::TIMESTAMP_S)                                                                             \
+	LT(wedding_anniversary, LogicalType::TIMESTAMP_S)                                                                  \
+	LT(spouse_name, LogicalType::VARCHAR)                                                                              \
+	LT(childrens_names, LogicalType::VARCHAR)                                                                          \
+	LT(gender, LogicalType::SMALLINT)                                                                                  \
+	LT(hobbies, LogicalType::VARCHAR)                                                                                  \
+	LT(profession, LogicalType::VARCHAR)                                                                               \
 	LT(language, LogicalType::VARCHAR)                                                                                 \
 	LT(location, LogicalType::VARCHAR)                                                                                 \
-	LT(mail_permission, LogicalType::BOOLEAN)                                                                          \
-	LT(mhs_common_name, LogicalType::VARCHAR)                                                                          \
-	LT(organizational_id_number, LogicalType::VARCHAR)                                                                 \
-	LT(surname, LogicalType::VARCHAR)                                                                                  \
-	LT(original_display_name, LogicalType::VARCHAR)                                                                    \
-	LT(postal_address, LogicalType::VARCHAR)                                                                           \
+	LT(keyword, LogicalType::VARCHAR)                                                                                  \
 	LT(company_name, LogicalType::VARCHAR)                                                                             \
 	LT(title, LogicalType::VARCHAR)                                                                                    \
 	LT(department_name, LogicalType::VARCHAR)                                                                          \
 	LT(office_location, LogicalType::VARCHAR)                                                                          \
+	LT(manager_name, LogicalType::VARCHAR)                                                                             \
+	LT(assistant, LogicalType::VARCHAR)                                                                                \
+	LT(customer_id, LogicalType::VARCHAR)                                                                              \
 	LT(primary_telephone, LogicalType::VARCHAR)                                                                        \
+	LT(business_telephone, LogicalType::VARCHAR)                                                                       \
 	LT(business_telephone_2, LogicalType::VARCHAR)                                                                     \
+	LT(home_telephone, LogicalType::VARCHAR)                                                                           \
+	LT(home_telephone_2, LogicalType::VARCHAR)                                                                         \
 	LT(mobile_telephone, LogicalType::VARCHAR)                                                                         \
-	LT(radio_telephone, LogicalType::VARCHAR)                                                                          \
 	LT(car_telephone, LogicalType::VARCHAR)                                                                            \
-	LT(other_telephone, LogicalType::VARCHAR)                                                                          \
-	LT(transmittable_display_name, LogicalType::VARCHAR)                                                               \
+	LT(radio_telephone, LogicalType::VARCHAR)                                                                          \
 	LT(pager_telephone, LogicalType::VARCHAR)                                                                          \
+	LT(callback_number, LogicalType::VARCHAR)                                                                          \
+	LT(other_telephone, LogicalType::VARCHAR)                                                                          \
+	LT(assistant_telephone, LogicalType::VARCHAR)                                                                      \
+	LT(company_main_phone, LogicalType::VARCHAR)                                                                       \
+	LT(ttytdd_phone, LogicalType::VARCHAR)                                                                             \
+	LT(isdn_number, LogicalType::VARCHAR)                                                                              \
+	LT(telex_number, LogicalType::VARCHAR)                                                                             \
 	LT(primary_fax, LogicalType::VARCHAR)                                                                              \
 	LT(business_fax, LogicalType::VARCHAR)                                                                             \
 	LT(home_fax, LogicalType::VARCHAR)                                                                                 \
-	LT(business_address_country, LogicalType::VARCHAR)                                                                 \
+	LT(business_address_street, LogicalType::VARCHAR)                                                                  \
 	LT(business_address_city, LogicalType::VARCHAR)                                                                    \
 	LT(business_address_state, LogicalType::VARCHAR)                                                                   \
-	LT(business_address_street, LogicalType::VARCHAR)                                                                  \
 	LT(business_postal_code, LogicalType::VARCHAR)                                                                     \
+	LT(business_address_country, LogicalType::VARCHAR)                                                                 \
 	LT(business_po_box, LogicalType::VARCHAR)                                                                          \
-	LT(telex_number, LogicalType::VARCHAR)                                                                             \
-	LT(isdn_number, LogicalType::VARCHAR)                                                                              \
-	LT(assistant_telephone, LogicalType::VARCHAR)                                                                      \
-	LT(home_telephone_2, LogicalType::VARCHAR)                                                                         \
-	LT(assistant, LogicalType::VARCHAR)                                                                                \
-	LT(send_rich_info, LogicalType::BOOLEAN)                                                                           \
-	LT(wedding_anniversary, LogicalType::TIMESTAMP_S)                                                                  \
-	LT(birthday, LogicalType::TIMESTAMP_S)                                                                             \
-	LT(hobbies, LogicalType::VARCHAR)                                                                                  \
-	LT(middle_name, LogicalType::VARCHAR)                                                                              \
-	LT(display_name_prefix, LogicalType::VARCHAR)                                                                      \
-	LT(profession, LogicalType::VARCHAR)                                                                               \
-	LT(preferred_by_name, LogicalType::VARCHAR)                                                                        \
-	LT(spouse_name, LogicalType::VARCHAR)                                                                              \
-	LT(computer_network_name, LogicalType::VARCHAR)                                                                    \
-	LT(customer_id, LogicalType::VARCHAR)                                                                              \
-	LT(ttytdd_phone, LogicalType::VARCHAR)                                                                             \
-	LT(ftp_site, LogicalType::VARCHAR)                                                                                 \
-	LT(gender, LogicalType::SMALLINT)                                                                                  \
-	LT(manager_name, LogicalType::VARCHAR)                                                                             \
-	LT(nickname, LogicalType::VARCHAR)                                                                                 \
+	LT(home_address_street, LogicalType::VARCHAR)                                                                      \
+	LT(home_address_city, LogicalType::VARCHAR)                                                                        \
+	LT(home_address_state, LogicalType::VARCHAR)                                                                       \
+	LT(home_address_postal_code, LogicalType::VARCHAR)                                                                 \
+	LT(home_address_country, LogicalType::VARCHAR)                                                                     \
+	LT(home_address_po_box, LogicalType::VARCHAR)                                                                      \
+	LT(other_address_street, LogicalType::VARCHAR)                                                                     \
+	LT(other_address_city, LogicalType::VARCHAR)                                                                       \
+	LT(other_address_state, LogicalType::VARCHAR)                                                                      \
+	LT(other_address_postal_code, LogicalType::VARCHAR)                                                                \
+	LT(other_address_country, LogicalType::VARCHAR)                                                                    \
+	LT(other_address_po_box, LogicalType::VARCHAR)                                                                     \
+	LT(postal_address, LogicalType::VARCHAR)                                                                           \
 	LT(personal_home_page, LogicalType::VARCHAR)                                                                       \
 	LT(business_home_page, LogicalType::VARCHAR)                                                                       \
-	LT(company_main_phone, LogicalType::VARCHAR)                                                                       \
-	LT(childrens_names, LogicalType::VARCHAR)                                                                          \
-	LT(home_address_city, LogicalType::VARCHAR)                                                                        \
-	LT(home_address_country, LogicalType::VARCHAR)                                                                     \
-	LT(home_address_postal_code, LogicalType::VARCHAR)                                                                 \
-	LT(home_address_state, LogicalType::VARCHAR)                                                                       \
-	LT(home_address_street, LogicalType::VARCHAR)                                                                      \
-	LT(home_address_po_box, LogicalType::VARCHAR)                                                                      \
-	LT(other_address_city, LogicalType::VARCHAR)                                                                       \
-	LT(other_address_country, LogicalType::VARCHAR)                                                                    \
-	LT(other_address_postal_code, LogicalType::VARCHAR)                                                                \
-	LT(other_address_state, LogicalType::VARCHAR)                                                                      \
-	LT(other_address_street, LogicalType::VARCHAR)                                                                     \
-	LT(other_address_po_box, LogicalType::VARCHAR)
+	LT(ftp_site, LogicalType::VARCHAR)                                                                                 \
+	LT(computer_network_name, LogicalType::VARCHAR)                                                                    \
+	LT(mail_permission, LogicalType::BOOLEAN)                                                                          \
+	LT(send_rich_info, LogicalType::BOOLEAN)                                                                           \
+	LT(conversation_prohibited, LogicalType::BOOLEAN)                                                                  \
+	LT(disclose_recipients, LogicalType::BOOLEAN)
 
 enum class ContactProjection {
 	PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) CONTACT_CHILDREN(SCHEMA_CHILD_NAME)
@@ -245,16 +245,16 @@ static const auto CONTACT_SCHEMA =
 	LT(end_time, LogicalType::TIMESTAMP_S)                                                                             \
 	LT(duration, LogicalType::INTEGER)                                                                                 \
 	LT(all_day_event, LogicalType::BOOLEAN)                                                                            \
-	LT(busy_status, LogicalType::INTEGER)                                                                              \
-	LT(meeting_workspace_url, LogicalType::VARCHAR)                                                                    \
+	LT(is_meeting, LogicalType::BOOLEAN)                                                                               \
 	LT(organizer_name, LogicalType::VARCHAR)                                                                           \
 	LT(required_attendees, LogicalType::VARCHAR)                                                                       \
 	LT(optional_attendees, LogicalType::VARCHAR)                                                                       \
+	LT(meeting_workspace_url, LogicalType::VARCHAR)                                                                    \
+	LT(busy_status, LogicalType::INTEGER)                                                                              \
+	LT(response_status, LogicalType::INTEGER)                                                                          \
 	LT(is_recurring, LogicalType::BOOLEAN)                                                                             \
 	LT(recurrence_pattern, LogicalType::VARCHAR)                                                                       \
-	LT(is_private, LogicalType::BOOLEAN)                                                                               \
-	LT(response_status, LogicalType::INTEGER)                                                                          \
-	LT(is_meeting, LogicalType::BOOLEAN)
+	LT(is_private, LogicalType::BOOLEAN)
 
 enum class AppointmentProjection {
 	PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) APPOINTMENT_CHILDREN(SCHEMA_CHILD_NAME)
@@ -281,20 +281,20 @@ static const auto STICKY_NOTE_SCHEMA =
 /* Task schema */
 #define TASK_CHILDREN(LT)                                                                                              \
 	LT(task_status, LogicalType::INTEGER)                                                                              \
+	LT(is_complete, LogicalType::BOOLEAN)                                                                              \
 	LT(percent_complete, LogicalType::DOUBLE)                                                                          \
-	LT(is_team_task, LogicalType::BOOLEAN)                                                                             \
 	LT(start_date, LogicalType::TIMESTAMP_S)                                                                           \
 	LT(due_date, LogicalType::TIMESTAMP_S)                                                                             \
 	LT(date_completed, LogicalType::TIMESTAMP_S)                                                                       \
-	LT(actual_effort, LogicalType::INTEGER)                                                                            \
+	LT(last_update, LogicalType::TIMESTAMP_S)                                                                          \
 	LT(estimated_effort, LogicalType::INTEGER)                                                                         \
-	LT(is_complete, LogicalType::BOOLEAN)                                                                              \
+	LT(actual_effort, LogicalType::INTEGER)                                                                            \
 	LT(task_owner, LogicalType::VARCHAR)                                                                               \
 	LT(task_assigner, LogicalType::VARCHAR)                                                                            \
-	LT(last_user, LogicalType::VARCHAR)                                                                                \
-	LT(is_recurring, LogicalType::BOOLEAN)                                                                             \
 	LT(ownership, LogicalType::INTEGER)                                                                                \
-	LT(last_update, LogicalType::TIMESTAMP_S)
+	LT(last_user, LogicalType::VARCHAR)                                                                                \
+	LT(is_team_task, LogicalType::BOOLEAN)                                                                             \
+	LT(is_recurring, LogicalType::BOOLEAN)
 
 enum class TaskProjection {
 	PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) TASK_CHILDREN(SCHEMA_CHILD_NAME)
