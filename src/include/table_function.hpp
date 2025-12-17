@@ -54,6 +54,8 @@ inline const LogicalType &output_schema(const PSTReadFunctionMode &mode) {
 		return schema::APPOINTMENT_SCHEMA;
 	case PSTReadFunctionMode::StickyNote:
 		return schema::STICKY_NOTE_SCHEMA;
+	case PSTReadFunctionMode::Task:
+		return schema::TASK_SCHEMA;
 	default:
 		throw InvalidInputException("Unknown read function mode. Please report this bug on GitHub.");
 	}
@@ -61,7 +63,8 @@ inline const LogicalType &output_schema(const PSTReadFunctionMode &mode) {
 
 static const map<string, PSTReadFunctionMode> FUNCTIONS = {
     {"read_pst_folders", Folder}, {"read_pst_messages", Message}, {"read_pst_appointments", Appointment},
-    {"read_pst_notes", Note},     {"read_pst_contacts", Contact}, {"read_pst_sticky_notes", StickyNote}};
+    {"read_pst_notes", Note},     {"read_pst_contacts", Contact}, {"read_pst_sticky_notes", StickyNote},
+    {"read_pst_tasks", Task}};
 
 static const named_parameter_type_map_t NAMED_PARAMETERS = {{"max_body_size_bytes", LogicalType::UBIGINT},
                                                             {"partition_size", LogicalType::UBIGINT},

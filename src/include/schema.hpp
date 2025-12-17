@@ -34,6 +34,15 @@ inline LogicalType ImportanceSchema() {
 	return LogicalType::ENUM(values, 3);
 }
 
+inline LogicalType PrioritySchema() {
+	Vector values(LogicalType::VARCHAR, 3);
+	auto data = FlatVector::GetData<string_t>(values);
+	data[0] = StringVector::AddString(values, "NONURGENT");
+	data[1] = StringVector::AddString(values, "NORMAL");
+	data[2] = StringVector::AddString(values, "URGENT");
+	return LogicalType::ENUM(values, 3);
+}
+
 inline LogicalType SensitivitySchema() {
 	Vector values(LogicalType::VARCHAR, 4);
 	auto data = FlatVector::GetData<string_t>(values);
@@ -59,6 +68,7 @@ inline LogicalType AttachMethodSchema() {
 
 static const auto RECIPIENT_TYPE_ENUM = RecipientTypeSchema();
 static const auto IMPORTANCE_ENUM = ImportanceSchema();
+static const auto PRIORITY_ENUM = PrioritySchema();
 static const auto SENSITIVITY_ENUM = SensitivitySchema();
 static const auto ATTACH_METHOD_ENUM = AttachMethodSchema();
 
@@ -88,6 +98,9 @@ static const auto PST_SCHEMA = LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD)})
 	LT(body, LogicalType::VARCHAR)                                                                                     \
 	LT(display_name, LogicalType::VARCHAR)                                                                             \
 	LT(comment, LogicalType::VARCHAR)                                                                                  \
+	LT(importance, IMPORTANCE_ENUM)                                                                                    \
+	LT(priority, PRIORITY_ENUM)                                                                                        \
+	LT(sensitivity, SENSITIVITY_ENUM)                                                                                  \
 	LT(creation_time, LogicalType::TIMESTAMP_S)                                                                        \
 	LT(last_modified, LogicalType::TIMESTAMP_S)
 
@@ -137,8 +150,6 @@ enum class PSTCommonChildren {
 	LT(sender_email_address, LogicalType::VARCHAR)                                                                     \
 	LT(message_delivery_time, LogicalType::TIMESTAMP_S)                                                                \
 	LT(message_class, LogicalType::VARCHAR)                                                                            \
-	LT(importance, IMPORTANCE_ENUM)                                                                                    \
-	LT(sensitivity, SENSITIVITY_ENUM)                                                                                  \
 	LT(message_flags, LogicalType::INTEGER)                                                                            \
 	LT(message_size, LogicalType::UBIGINT)                                                                             \
 	LT(has_attachments, LogicalType::BOOLEAN)                                                                          \
@@ -283,6 +294,31 @@ enum class StickyNoteProjection {
 
 static const auto STICKY_NOTE_SCHEMA =
     LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) STICKY_NOTE_CHILDREN(SCHEMA_CHILD)});
+
+/* Task schema */
+#define TASK_CHILDREN(LT)                                                                                              \
+	LT(task_status, LogicalType::INTEGER)                                                                              \
+	LT(percent_complete, LogicalType::DOUBLE)                                                                          \
+	LT(is_team_task, LogicalType::BOOLEAN)                                                                             \
+	LT(start_date, LogicalType::TIMESTAMP_S)                                                                           \
+	LT(due_date, LogicalType::TIMESTAMP_S)                                                                             \
+	LT(date_completed, LogicalType::TIMESTAMP_S)                                                                       \
+	LT(actual_effort, LogicalType::INTEGER)                                                                            \
+	LT(estimated_effort, LogicalType::INTEGER)                                                                         \
+	LT(is_complete, LogicalType::BOOLEAN)                                                                              \
+	LT(task_owner, LogicalType::VARCHAR)                                                                               \
+	LT(task_assigner, LogicalType::VARCHAR)                                                                            \
+	LT(last_user, LogicalType::VARCHAR)                                                                                \
+	LT(is_recurring, LogicalType::BOOLEAN)                                                                             \
+	LT(ownership, LogicalType::INTEGER)                                                                                \
+	LT(last_update, LogicalType::TIMESTAMP_S)
+
+enum class TaskProjection {
+	PST_CHILDREN(SCHEMA_CHILD_NAME) COMMON_CHILDREN(SCHEMA_CHILD_NAME) TASK_CHILDREN(SCHEMA_CHILD_NAME)
+};
+
+static const auto TASK_SCHEMA =
+    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) COMMON_CHILDREN(SCHEMA_CHILD) TASK_CHILDREN(SCHEMA_CHILD)});
 
 /* Folder schema */
 

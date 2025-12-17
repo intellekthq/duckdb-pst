@@ -238,6 +238,15 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		output.SetValue(column_index, row_number,
 		                from_prop<pstsdk::ulonglong>(col_type, bag, PR_LAST_MODIFICATION_TIME));
 		break;
+	case static_cast<int>(schema::PSTCommonChildren::importance):
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, bag, PR_IMPORTANCE));
+		break;
+	case static_cast<int>(schema::PSTCommonChildren::priority):
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, bag, PR_PRIORITY));
+		break;
+	case static_cast<int>(schema::PSTCommonChildren::sensitivity):
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, bag, PR_SENSITIVITY));
+		break;
 	case static_cast<int>(schema::PSTCommonChildren::subject):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, bag, PR_SUBJECT_A));
 		break;
@@ -310,12 +319,6 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		break;
 	case static_cast<int>(schema::MessageProjection::message_class):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_MESSAGE_CLASS_A));
-		break;
-	case static_cast<int>(schema::MessageProjection::importance):
-		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_IMPORTANCE));
-		break;
-	case static_cast<int>(schema::MessageProjection::sensitivity):
-		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_SENSITIVITY));
 		break;
 	case static_cast<int>(schema::MessageProjection::message_flags):
 		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, PR_MESSAGE_FLAGS));
@@ -776,6 +779,81 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 
 template <>
 void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output,
+                       pst::TypedBag<pst::MessageClass::Task> &task, idx_t row_number, idx_t column_index) {
+	auto &prop_bag = task.bag;
+	auto schema_col = local_state.column_ids()[column_index];
+	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
+
+	prop_id named_prop_id = 0;
+
+	switch (schema_col) {
+	case static_cast<int>(schema::TaskProjection::task_status):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskStatus);
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::percent_complete):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidPercentComplete);
+		output.SetValue(column_index, row_number, from_prop<double>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::is_team_task):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTeamTask);
+		output.SetValue(column_index, row_number, from_prop<bool>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::start_date):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskStartDate);
+		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::due_date):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskDueDate);
+		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::date_completed):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskDateCompleted);
+		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::actual_effort):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskActualEffort);
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::estimated_effort):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskEstimatedEffort);
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::is_complete):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskComplete);
+		output.SetValue(column_index, row_number, from_prop<bool>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::task_owner):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskOwner_A);
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::task_assigner):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskAssigner_A);
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::last_user):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskLastUser_A);
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::is_recurring):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskFRecurring);
+		output.SetValue(column_index, row_number, from_prop<bool>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::ownership):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskOwnership);
+		output.SetValue(column_index, row_number, from_prop<int32_t>(col_type, prop_bag, named_prop_id));
+		break;
+	case static_cast<int>(schema::TaskProjection::last_update):
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_task, PidLidTaskLastUpdate);
+		output.SetValue(column_index, row_number, from_prop<pstsdk::ulonglong>(col_type, prop_bag, named_prop_id));
+		break;
+	default:
+		break;
+	}
+}
+
+template <>
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output,
                        pst::TypedBag<pst::MessageClass::Note, pstsdk::folder> &folder, idx_t row_number,
                        idx_t column_index) {
 	auto &prop_bag = folder.bag;
@@ -866,5 +944,10 @@ template void into_row<pst::TypedBag<pst::MessageClass::StickyNote>>(PSTReadLoca
                                                                      duckdb::DataChunk &output,
                                                                      pst::TypedBag<pst::MessageClass::StickyNote> &item,
                                                                      idx_t row_number);
+
+template void into_row<pst::TypedBag<pst::MessageClass::Task>>(PSTReadLocalState &local_state,
+                                                               duckdb::DataChunk &output,
+                                                               pst::TypedBag<pst::MessageClass::Task> &item,
+                                                               idx_t row_number);
 
 } // namespace intellekt::duckpst::row_serializer
