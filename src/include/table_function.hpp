@@ -1,7 +1,7 @@
 #pragma once
 
 #include "schema.hpp"
-#include "pst/message.hpp"
+#include "pst/typed_bag.hpp"
 
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/open_file_info.hpp"
@@ -47,22 +47,26 @@ inline const LogicalType &output_schema(const PSTReadFunctionMode &mode) {
 		return schema::FOLDER_SCHEMA;
 	case PSTReadFunctionMode::Note:
 	case PSTReadFunctionMode::Message:
-		return schema::MESSAGE_SCHEMA;
+		return schema::NOTE_SCHEMA;
 	case PSTReadFunctionMode::Contact:
 		return schema::CONTACT_SCHEMA;
+	case PSTReadFunctionMode::Appointment:
+		return schema::APPOINTMENT_SCHEMA;
+	case PSTReadFunctionMode::StickyNote:
+		return schema::STICKY_NOTE_SCHEMA;
+	case PSTReadFunctionMode::Task:
+		return schema::TASK_SCHEMA;
 	default:
 		throw InvalidInputException("Unknown read function mode. Please report this bug on GitHub.");
 	}
 }
 
 static const map<string, PSTReadFunctionMode> FUNCTIONS = {
-    {"read_pst_folders", Folder},
-    {"read_pst_messages", Message},
-    {"read_pst_notes", Note},
-    {"read_pst_contacts", Contact},
-};
+    {"read_pst_folders", Folder}, {"read_pst_messages", Message}, {"read_pst_appointments", Appointment},
+    {"read_pst_notes", Note},     {"read_pst_contacts", Contact}, {"read_pst_sticky_notes", StickyNote},
+    {"read_pst_tasks", Task}};
 
-static const named_parameter_type_map_t NAMED_PARAMETERS = {{"max_body_size_bytes", LogicalType::UBIGINT},
+static const named_parameter_type_map_t NAMED_PARAMETERS = {{"read_body_size_bytes", LogicalType::UBIGINT},
                                                             {"partition_size", LogicalType::UBIGINT},
                                                             {"read_attachment_body", LogicalType::BOOLEAN},
                                                             {"read_limit", LogicalType::UBIGINT}};
@@ -106,7 +110,7 @@ public:
 
 	// Parameters
 	const idx_t partition_size() const;
-	const idx_t max_body_size_bytes() const;
+	const idx_t read_body_size_bytes() const;
 	const bool read_attachment_body() const;
 	const idx_t read_limit() const;
 

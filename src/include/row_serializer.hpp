@@ -77,12 +77,4 @@ void into_row(PSTReadLocalState &local_state, duckdb::DataChunk &output, Item &i
 template <typename Item>
 duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t, Item item);
 
-/**
- * @brief Set common MAPI property values in a struct's child list
- *
- * @param values
- * @param bag
- */
-void set_common_struct_fields(vector<Value> &values, pstsdk::const_property_object &bag, const LogicalType &col_type,
-                              idx_t col);
 } // namespace intellekt::duckpst::row_serializer

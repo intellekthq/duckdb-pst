@@ -1,9 +1,9 @@
 #pragma once
 
-#include "duckdb/common/exception.hpp"
 #include "pstsdk/ltp/propbag.h"
 #include "pstsdk/mapitags.h"
 #include "pstsdk/pst/pst.h"
+#include <type_traits>
 #include <unordered_map>
 
 namespace intellekt::duckpst::pst {
@@ -99,21 +99,25 @@ inline MessageClass message_class(const pstsdk::pst &pst, const pstsdk::node_id 
 }
 
 /**
- * @brief A wrapper for pstsdk::message so we can treat its prop bag differently
- *        for different schemas. Defaults to IPM.Note.
+ * @brief A typed wrapper for pstsdk prop bags, allowing them to be mounted directly from NID,
+ *		  where the pstsdk companion object is instantiated alongside
  *
- * @tparam V
+ * @tparam V The message/container class type
+ * @tparam T The SDK companion object
  */
-template <MessageClass V>
-struct Message {
+template <MessageClass V, typename T = pstsdk::message>
+struct TypedBag {
 	pstsdk::pst &pst;
-	pstsdk::message &message;
+	pstsdk::node node;
+	pstsdk::property_bag bag;
 
-	inline Message(pstsdk::pst &pst, pstsdk::message &message) : pst(pst), message(message) {
-#ifdef DUCKPST_STRICT_MESSAGE_CHECK
+	std::optional<T> sdk_object;
+
+	inline TypedBag(pstsdk::pst &pst, pstsdk::node_id nid) : pst(pst), node(pst.get_db()->lookup_node(nid)), bag(node) {
+#ifdef DUCKPST_TYPED_BAG_CHECK_STRICT
 		auto message_class = message.get_property_bag().read_prop_if_exists<std::string>(PR_MESSAGE_CLASS_A);
 		if (!message_class)
-			throw duckdb::InvalidInputException("Message is missing PR_MESSAGE_CLASS attribute");
+			throw duckdb::InvalidInputException("TypedBag is missing PR_MESSAGE_CLASS attribute");
 
 		if constexpr (V == BASE_CLASS) {
 			return;
@@ -122,13 +126,40 @@ struct Message {
 		auto templ_name = message_class_name(V);
 
 		if (*message_class != message_class_name(V))
-			throw duckdb::InvalidInputException("Message instantiated as %s, but is %s", templ_name, *message_class);
+			throw duckdb::InvalidInputException("TypedBag instantiated as %s, but is %s", templ_name, *message_class);
 #endif
+		if constexpr (std::is_same_v<T, pstsdk::folder>) {
+			sdk_object.emplace(pstsdk::folder(pst.get_db(), node));
+		} else {
+			sdk_object.emplace(pstsdk::message(node));
+		}
 	}
 
 	inline MessageClass message_class() {
 		return V;
 	}
 };
+
+// bag constexpr helpers (used for serializer)
+
+template <typename T>
+struct is_folder_bag : std::false_type {};
+
+template <MessageClass V>
+struct is_folder_bag<TypedBag<V, pstsdk::folder>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_folder_bag_v = is_folder_bag<T>::value;
+
+template <typename T>
+struct is_base_msg_bag : std::false_type {};
+
+template <MessageClass V>
+struct is_base_msg_bag<TypedBag<V, pstsdk::message>> {
+	static inline const bool value = V == MessageClass::Note;
+};
+
+template <typename T>
+inline constexpr bool is_base_msg_bag_v = is_base_msg_bag<T>::value;
 
 } // namespace intellekt::duckpst::pst

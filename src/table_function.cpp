@@ -1,6 +1,6 @@
 #include "table_function.hpp"
 #include "function_state.hpp"
-#include "pst/message.hpp"
+#include "pst/typed_bag.hpp"
 #include "schema.hpp"
 
 #include "duckdb/common/exception.hpp"
@@ -68,8 +68,8 @@ const idx_t PSTReadTableFunctionData::partition_size() const {
 	return std::max<idx_t>(parameter_or_default("partition_size", DEFAULT_PARTITION_SIZE), 1);
 }
 
-const idx_t PSTReadTableFunctionData::max_body_size_bytes() const {
-	return parameter_or_default("max_body_size_bytes", DEFAULT_BODY_SIZE_BYTES);
+const idx_t PSTReadTableFunctionData::read_body_size_bytes() const {
+	return parameter_or_default("read_body_size_bytes", DEFAULT_BODY_SIZE_BYTES);
 }
 
 const bool PSTReadTableFunctionData::read_attachment_body() const {
@@ -126,7 +126,8 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx, OpenFile
 			auto message_node = pst->get_db().get()->lookup_node(id);
 
 			// It really sucks that the only way to determine a message class is by reading and asserting the string.
-			// TODO: Heuristic based on attribute presence (i.e. is chaining a few prop_exists calls faster than the string assert?)
+			// TODO: Heuristic based on attribute presence (i.e. is chaining a few prop_exists calls faster than the
+			// string assert?)
 			auto klass = pst::message_class(*pst, id);
 			switch (mode) {
 			case PSTReadFunctionMode::Appointment:
@@ -242,10 +243,23 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 
 	switch (bind_data.mode) {
 	case PSTReadFunctionMode::Folder:
-		local_state = make_uniq<PSTReadRowSpoolerState<folder>>(global_state, ec);
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Note, pstsdk::folder>>(global_state, ec);
 		break;
+	case PSTReadFunctionMode::Contact:
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Contact>>(global_state, ec);
+		break;
+	case PSTReadFunctionMode::Appointment:
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Appointment>>(global_state, ec);
+		break;
+	case PSTReadFunctionMode::Task:
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Task>>(global_state, ec);
+		break;
+	case PSTReadFunctionMode::StickyNote:
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::StickyNote>>(global_state, ec);
+		break;
+	case PSTReadFunctionMode::Note:
 	default:
-		local_state = make_uniq<PSTReadRowSpoolerState<message>>(global_state, ec);
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Note>>(global_state, ec);
 		break;
 	}
 
@@ -317,16 +331,16 @@ virtual_column_map_t PSTVirtualColumns(ClientContext &ctx, optional_ptr<Function
 
 	virtual_column_map_t virtual_cols;
 
-	virtual_cols.emplace(make_pair(schema::PST_ITEM_NODE_ID, TableColumn("__node_id", schema::PST_ITEM_NODE_ID_TYPE)));
+	virtual_cols.emplace(make_pair(schema::PST_VCOL_NODE_ID, TableColumn("__node_id", schema::PST_VCOL_NODE_ID_TYPE)));
 	virtual_cols.emplace(
-	    make_pair(schema::PST_PARTITION_INDEX, TableColumn("__partition", schema::PST_PARTITION_INDEX_TYPE)));
+	    make_pair(schema::PST_VCOL_PARTITION_INDEX, TableColumn("__partition", schema::PST_VCOL_PARTITION_INDEX_TYPE)));
 
 	return virtual_cols;
 }
 
 vector<column_t> PSTRowIDColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data) {
 	DUCKDB_LOG_DEBUG(ctx, "get_row_id_columns [PSTRowIDColumns]");
-	return {schema::PST_ITEM_NODE_ID, schema::PST_PARTITION_INDEX};
+	return {schema::PST_VCOL_NODE_ID, schema::PST_VCOL_PARTITION_INDEX};
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output) {
