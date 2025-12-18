@@ -81,9 +81,18 @@ Call these table functions to read MAPI items and their specific fields. All PST
 |---------------------------|---------------------|----------------------------------------------------------|
 | `read_pst_folders`        | `*`                 | Folders                                                  |
 | `read_pst_messages`       | `*`                 | All messages, with base `IPM.Note` email projection      |
-| `read_pst_notes`          | `IPM.Note`          | (Filtered) only `IPM.Note`                               |
+| `read_pst_notes`          | `IPM.Note`          | (Filtered) only `IPM.Note` (and unimplemented types)     |
 | `read_pst_contacts`       | `IPM.Contact`       | (Filtered) only contacts with contact-specific fields    |
 | `read_pst_appointments`   | `IPM.Appointment`   | (Filtered) only calendar appointments and meetings       |
 | `read_pst_sticky_notes`   | `IPM.StickyNote`    | (Filtered) only sticky note items                        |
 | `read_pst_tasks`          | `IPM.Task`          | (Filtered) task items with task-specific fields          |
 
+## Building
+
+```bash
+git submodule update --init --recursive
+# GEN=ninja make release
+# Build with UI extension
+GEN=ninja make debug
+./build/debug/duckdb -ui
+```
