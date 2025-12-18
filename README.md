@@ -37,7 +37,24 @@ memory D select count(*) from read_pst_messages('enron/*.pst');
 Run Time (s): real 0.564 user 0.381726 sys 0.701447
 ```
 
-Read the first 10 messages (with limit applied during planning):
+What kinds of objects are in this PST?
+
+```sql
+select message_class, count(*) as c from read_pst_messages('test/*.pst') group by message_class order by c desc;
+┌─────────────────┬───────┐
+│  message_class  │   c   │
+│     varchar     │ int64 │
+├─────────────────┼───────┤
+│ IPM.Note        │     5 │
+│ IPM.Contact     │     2 │
+│ IPM.StickyNote  │     2 │
+│ IPM.DistList    │     1 │
+│ IPM.Task        │     1 │
+│ IPM.Appointment │     1 │
+└─────────────────┴───────┘
+```
+
+Read the first 10 messages (with limit applied during planning -- for large files):
 
 ```sql
 memory D select * from read_pst_messages('enron/*.pst', read_limit=5);

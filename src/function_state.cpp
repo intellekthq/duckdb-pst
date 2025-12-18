@@ -104,7 +104,7 @@ std::optional<pst::TypedBag<V, T>> PSTReadConcreteLocalState<V, T>::next() {
 	if (finished())
 		return {};
 
-	pst::TypedBag<V, T> typed_bag(*partition->pst, **current);
+	pst::TypedBag<V, T> typed_bag(*pst, **current);
 
 	++(*current);
 	return typed_bag;

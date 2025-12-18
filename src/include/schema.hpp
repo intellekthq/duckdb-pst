@@ -112,7 +112,8 @@ static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({ATTACHMENT_CHILDREN(S
 	LT(pst_path, LogicalType::VARCHAR)                                                                                 \
 	LT(pst_name, LogicalType::VARCHAR)                                                                                 \
 	LT(record_key, LogicalType::BLOB)                                                                                  \
-	LT(node_id, LogicalType::UINTEGER)
+	LT(node_id, LogicalType::UINTEGER)                                                                                 \
+	LT(parent_node_id, LogicalType::UINTEGER)
 
 enum class PSTProjection { PST_CHILDREN(SCHEMA_CHILD_NAME) };
 static const auto PST_SCHEMA = LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD)});
@@ -306,8 +307,8 @@ static const auto TASK_SCHEMA =
 /* Folder schema */
 
 #define FOLDER_CHILDREN(LT)                                                                                            \
+	LT(container_class, LogicalType::VARCHAR)                                                                          \
 	LT(display_name, LogicalType::VARCHAR)                                                                             \
-	LT(parent_node_id, LogicalType::UINTEGER)                                                                          \
 	LT(subfolder_count, LogicalType::UINTEGER)                                                                         \
 	LT(message_count, LogicalType::BIGINT)                                                                             \
 	LT(unread_message_count, LogicalType::BIGINT)

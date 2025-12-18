@@ -826,11 +826,11 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
 
 	switch (schema_col) {
+	case static_cast<int>(schema::FolderProjection::container_class):
+		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_CONTAINER_CLASS_A));
+		break;
 	case static_cast<int>(schema::FolderProjection::display_name):
 		output.SetValue(column_index, row_number, from_prop<std::string>(col_type, prop_bag, PR_DISPLAY_NAME_A));
-		break;
-	case static_cast<int>(schema::FolderProjection::parent_node_id):
-		output.SetValue(column_index, row_number, Value::UINTEGER(prop_bag.get_node().get_parent_id()));
 		break;
 	case static_cast<int>(schema::FolderProjection::subfolder_count):
 		output.SetValue(column_index, row_number, Value::UINTEGER(folder.sdk_object->get_subfolder_count()));
@@ -851,11 +851,15 @@ void into_row(PSTReadLocalState &local_state, duckdb::DataChunk &output, Item &i
 	for (idx_t col_idx = 0; col_idx < local_state.column_ids().size(); ++col_idx) {
 		auto schema_col = local_state.column_ids()[col_idx];
 
-		// Bind virtual columns + node_id (should be 'infallible' as long as the file isn't borked)
+		// Bind virtual columns + node_ids (should be 'infallible' as long as the file isn't borked)
 		switch (schema_col) {
 		case static_cast<int>(schema::PSTProjection::node_id):
 		case schema::PST_VCOL_NODE_ID:
 			output.SetValue(col_idx, row_number, Value::UINTEGER(item.node.get_id()));
+			break;
+		case static_cast<int>(schema::PSTProjection::parent_node_id):
+			output.SetValue(col_idx, row_number,
+			                Value::UINTEGER(item.sdk_object->get_property_bag().get_node().get_parent_id()));
 			break;
 		case schema::PST_VCOL_PARTITION_INDEX:
 			output.SetValue(col_idx, row_number, Value::UBIGINT(local_state.partition->partition_index));
