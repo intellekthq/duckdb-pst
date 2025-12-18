@@ -1,0 +1,53 @@
+# name: test/sql/query_optimizations.test
+# description: Test UDTF optimizations (stats, pushdown, planning filters, virtual columns, LM)
+# group: [pst]
+
+require pst
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+load pst;
+
+# Test stats pushdown for count(*)
+query II
+explain select count(*) from read_pst_messages('test/unittest.pst');
+----
+physical_plan	<REGEX>:.*COLUMN_DATA_SCAN.*
+
+# Test read_pst_notes plan level filter - should have 6 notes (IPM.Note)
+query II
+EXPLAIN SELECT * FROM read_pst_notes('test/unittest.pst')
+----
+physical_plan	<REGEX>:.*6 rows.*
+
+# Test read_pst_contacts plan level filter - should have 2 contacts
+query II
+EXPLAIN SELECT * FROM read_pst_contacts('test/unittest.pst')
+----
+physical_plan	<REGEX>:.*2 rows.*
+
+# Test read_pst_appointments plan level filter - should have 1 appointment
+query II
+EXPLAIN SELECT * FROM read_pst_appointments('test/unittest.pst')
+----
+physical_plan	<REGEX>:.*1 row.*
+
+# Test read_pst_sticky_notes plan level filter - should have 2 sticky notes
+query II
+EXPLAIN SELECT * FROM read_pst_sticky_notes('test/unittest.pst')
+----
+physical_plan	<REGEX>:.*2 rows.*
+
+# Test read_pst_tasks plan level filter - should have 1 task
+query II
+EXPLAIN SELECT * FROM read_pst_tasks('test/unittest.pst')
+----
+physical_plan	<REGEX>:.*1 row.*
+
+# Test late materialization opt-in
+query II
+explain select * from read_pst_messages('test/unittest.pst') where conversation_topic like 'Test%' order by conversation_topic limit 2;
+----
+physical_plan	<REGEX>:.*HASH_JOIN.*

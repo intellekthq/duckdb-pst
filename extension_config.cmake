@@ -10,6 +10,12 @@ duckdb_extension_load(pst
 
 # For convenience during testing
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    duckdb_extension_load(httpfs
+        GIT_URL https://github.com/duckdb/duckdb-httpfs
+        GIT_TAG main
+        APPLY_PATCHES
+    )
+
 #    duckdb_extension_load(aws
 #        GIT_URL https://github.com/duckdb/duckdb-aws
 #        GIT_TAG v1.4-andium
@@ -28,7 +34,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         GIT_TAG main
         APPLY_PATCHES
     )
-
 endif()
 
 # Any extra extensions that should be built
