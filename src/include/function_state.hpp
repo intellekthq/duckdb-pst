@@ -80,6 +80,12 @@ public:
 	const LogicalType &output_schema();
 };
 
+/**
+ * @brief Concrete impl for PSTReadLocalState against TypedBag variants
+ *
+ * @tparam V pst::MessageClass MAPI variant
+ * @tparam T pstsdk companion object
+ */
 template <pst::MessageClass V, typename T = pstsdk::message>
 class PSTReadConcreteLocalState : public PSTReadLocalState {
 public:

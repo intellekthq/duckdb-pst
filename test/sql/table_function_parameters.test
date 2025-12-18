@@ -28,13 +28,13 @@ SELECT node_id, length(body_html) from read_pst_messages('test/unittest.pst', re
 2097540	50
 
 # Test read_attachment_body (false by default)
+# no results, bs is NULL
 query II
 SELECT list_first(attachments) as a, a['bytes'] as bs from read_pst_messages('test/unittest.pst') where a['filename'] = 'MEDIUM~2.JPG' and bs is not null;
 ----
-# no results, bs is NULL
 
 # Test read_attachment_body = true
+# no results, bs is not NULL
 query II
 SELECT list_first(attachments) as a, a['bytes'] as bs from read_pst_messages('test/unittest.pst', read_attachment_body = true) where a['filename'] = 'MEDIUM~2.JPG' and bs is null;
 ----
-# no results, bs is not NULL

@@ -15,7 +15,7 @@ namespace intellekt::duckpst {
 using namespace duckdb;
 using namespace pstsdk;
 
-// PSTReadGlobalTableFunctionState
+// PSTReadGlobalState
 PSTReadGlobalState::PSTReadGlobalState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids)
     : bind_data(bind_data), column_ids(std::move(column_ids)) {
 	auto sync_partitions = partitions.synchronize();
@@ -44,6 +44,7 @@ idx_t PSTReadGlobalState::MaxThreads() const {
 	return std::max<idx_t>(partitions->size(), 1);
 }
 
+// PSTReadLocalState
 PSTReadLocalState::PSTReadLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec)
     : global_state(global_state), ec(ec) {
 	bind_partition();
@@ -89,6 +90,7 @@ bool PSTReadLocalState::bind_next() {
 	return true;
 }
 
+// PSTReadConcreteLocalState
 template <pst::MessageClass V, typename T>
 PSTReadConcreteLocalState<V, T>::PSTReadConcreteLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec)
     : PSTReadLocalState(global_state, ec) {
