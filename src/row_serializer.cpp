@@ -216,7 +216,7 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	auto &prop_bag = msg.get_property_bag();
 	auto schema_col = local_state.column_ids()[column_index];
 	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
-	auto read_size = local_state.global_state.bind_data.max_body_size_bytes();
+	auto read_size = local_state.global_state.bind_data.read_body_size_bytes();
 
 	switch (schema_col) {
 	case static_cast<int>(schema::NoteProjection::display_name):

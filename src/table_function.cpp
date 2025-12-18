@@ -68,8 +68,8 @@ const idx_t PSTReadTableFunctionData::partition_size() const {
 	return std::max<idx_t>(parameter_or_default("partition_size", DEFAULT_PARTITION_SIZE), 1);
 }
 
-const idx_t PSTReadTableFunctionData::max_body_size_bytes() const {
-	return parameter_or_default("max_body_size_bytes", DEFAULT_BODY_SIZE_BYTES);
+const idx_t PSTReadTableFunctionData::read_body_size_bytes() const {
+	return parameter_or_default("read_body_size_bytes", DEFAULT_BODY_SIZE_BYTES);
 }
 
 const bool PSTReadTableFunctionData::read_attachment_body() const {

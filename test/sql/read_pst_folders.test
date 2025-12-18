@@ -29,7 +29,7 @@ SELECT DISTINCT pst_name FROM read_pst_folders('test/unittest.pst')
 Outlook Data File
 
 # Expected container class counts
-query TI
+query II
 SELECT container_class, count(*) as c FROM read_pst_folders('test/*.pst') GROUP BY container_class ORDER BY c, container_class DESC
 ----
 IPF.Task	1

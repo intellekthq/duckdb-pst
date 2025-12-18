@@ -66,7 +66,7 @@ static const map<string, PSTReadFunctionMode> FUNCTIONS = {
     {"read_pst_notes", Note},     {"read_pst_contacts", Contact}, {"read_pst_sticky_notes", StickyNote},
     {"read_pst_tasks", Task}};
 
-static const named_parameter_type_map_t NAMED_PARAMETERS = {{"max_body_size_bytes", LogicalType::UBIGINT},
+static const named_parameter_type_map_t NAMED_PARAMETERS = {{"read_body_size_bytes", LogicalType::UBIGINT},
                                                             {"partition_size", LogicalType::UBIGINT},
                                                             {"read_attachment_body", LogicalType::BOOLEAN},
                                                             {"read_limit", LogicalType::UBIGINT}};
@@ -110,7 +110,7 @@ public:
 
 	// Parameters
 	const idx_t partition_size() const;
-	const idx_t max_body_size_bytes() const;
+	const idx_t read_body_size_bytes() const;
 	const bool read_attachment_body() const;
 	const idx_t read_limit() const;
 
