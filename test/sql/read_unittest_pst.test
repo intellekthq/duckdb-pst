@@ -1,0 +1,101 @@
+# name: test/sql/read_unittest_pst.test
+# description: 
+# group: [pst]
+
+require pst
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+load pst;
+
+# Should have 16 folders
+query I
+SELECT count(*) FROM read_pst_folders('test/unittest.pst')
+----
+16
+
+query IIIIIIIIII
+SELECT pst_path, pst_name, record_key, node_id, parent_node_id, container_class, CASE WHEN display_name = '' THEN '<empty>' ELSE display_name END as display_name, subfolder_count, message_count, unread_message_count FROM read_pst_folders('test/unittest.pst') ORDER BY node_id, parent_node_id
+----
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	290	290	NULL	<empty>	3	0	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	32802	290	NULL	Top of Outlook data file	13	0	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	32834	290	NULL	Search Root	0	0	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	32866	32802	NULL	Deleted Items	0	0	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	32898	32802	NULL	Inbox	0	4	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	32930	32802	NULL	Outbox	0	0	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	32962	32802	NULL	Sent Items	0	0	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	32994	32802	IPF.Appointment	Calendar	0	1	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	33026	32802	IPF.Contact	Contacts	0	3	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	33058	32802	IPF.Journal	Journal	0	0	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	33090	32802	IPF.StickyNote	Notes	0	2	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	33122	32802	IPF.Task	Tasks	0	1	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	33154	32802	IPF.Note	Drafts	0	1	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	33186	32802	IPF.Note.OutlookHomepage	RSS Feeds	0	0	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	33218	32802	IPF.Configuration	Conversation Action Settings	0	0	0
+test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	33250	32802	IPF.Configuration	Quick Step Settings	0	0	0
+
+# Test read_pst_notes - should have 6 notes (IPM.Note)
+query I
+SELECT count(*) FROM read_pst_notes('test/unittest.pst')
+----
+6
+
+# Test read_pst_contacts - should have 2 contacts
+query I
+SELECT count(*) FROM read_pst_contacts('test/unittest.pst')
+----
+2
+
+# Test read_pst_appointments - should have 1 appointment
+query I
+SELECT count(*) FROM read_pst_appointments('test/unittest.pst')
+----
+1
+
+# Test read_pst_sticky_notes - should have 2 sticky notes
+query I
+SELECT count(*) FROM read_pst_sticky_notes('test/unittest.pst')
+----
+2
+
+# Test read_pst_tasks - should have 1 task
+query I
+SELECT count(*) FROM read_pst_tasks('test/unittest.pst')
+----
+1
+
+# Test read_pst_messages - should have 12 messages total
+query I
+SELECT count(*) FROM read_pst_messages('test/unittest.pst')
+----
+12
+
+# Test sticky notes
+query IIIIIIIII
+SELECT node_id, parent_node_id, message_class, conversation_topic, note_color, note_width, note_height, note_x, note_y
+FROM read_pst_sticky_notes('test/unittest.pst')
+ORDER BY node_id, parent_node_id
+----
+2097444	33090	IPM.StickyNote	This UI hasn't changed since I used Outlook on Win9x. Awesome.	3	2051	1565	80	80
+2097476	33090	IPM.StickyNote	NULL	0	2051	1565	81	81
+
+# Test tasks
+# TODO data quality: subject
+query IIII
+SELECT node_id, parent_node_id, message_class, due_date
+FROM read_pst_tasks('test/unittest.pst')
+ORDER BY node_id
+----
+2097508	33122	IPM.Task	2025-12-25 00:00:00
+
+# Test appointment
+# TODO data quality: subject
+query IIIIIII
+SELECT node_id, parent_node_id, message_class, start_time, end_time, duration, all_day_event
+FROM read_pst_appointments('test/unittest.pst')
+ORDER BY node_id
+----
+2097316	32994	IPM.Appointment	2025-12-25 05:00:00	2025-12-26 05:00:00	1440	1
+
