@@ -76,7 +76,10 @@ static const named_parameter_type_map_t NAMED_PARAMETERS = {{"read_body_size_byt
  */
 struct PSTInputPartition {
 	const idx_t partition_index;
+
+	// The PST object is _not_ thread safe, and is intended to be copied on bind for use!
 	const shared_ptr<pstsdk::pst> pst;
+
 	const OpenFileInfo file;
 	const PSTReadFunctionMode mode;
 	PartitionStatistics stats;
