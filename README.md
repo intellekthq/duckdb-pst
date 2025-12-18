@@ -1,5 +1,6 @@
-# duckdb-pst
+<img width="100" alt="logo" src="https://github.com/user-attachments/assets/279fa223-f786-4e95-9d8f-1d0d9276afce" />
 
+# duckdb-pst
 A DuckDB extension for efficiently reading data out of [Microsoft PST files](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546), with rich schemas for common MAPI types. It is fully integrated with DuckDB's filesystem allowing direct reads from local disk or object storage (with globbing). Use it to query PST files using plain SQL, or to import their data into DuckDB tables (or any other supported federated write).
 
 ## Features
