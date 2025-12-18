@@ -1,4 +1,4 @@
-# name: test/sql/read_unittest_pst.test
+# name: test/sql/table_function_parameters.test
 # description: 
 # group: [pst]
 
@@ -16,7 +16,7 @@ SELECT count(*) FROM (SELECT * from read_pst_messages('test/unittest.pst', read_
 ----
 2
 
-# Test read_body_size_bytes
+# Test read_body_size_bytes (they are wchar_t, so 50 is ok)
 query II
 SELECT node_id, length(body_html) from read_pst_messages('test/unittest.pst', read_body_size_bytes = 100) where body_html is not null order by node_id asc;
 ----
@@ -31,9 +31,10 @@ SELECT node_id, length(body_html) from read_pst_messages('test/unittest.pst', re
 query II
 SELECT list_first(attachments) as a, a['bytes'] as bs from read_pst_messages('test/unittest.pst') where a['filename'] = 'MEDIUM~2.JPG' and bs is not null;
 ----
-
+# no results, bs is NULL
 
 # Test read_attachment_body = true
 query II
 SELECT list_first(attachments) as a, a['bytes'] as bs from read_pst_messages('test/unittest.pst', read_attachment_body = true) where a['filename'] = 'MEDIUM~2.JPG' and bs is null;
 ----
+# no results, bs is not NULL
