@@ -11,6 +11,7 @@ namespace intellekt::duckpst::pst {
 #define MESSAGE_CLASSES(LT)                                                                                            \
 	LT(Appointment)                                                                                                    \
 	LT(Contact)                                                                                                        \
+	LT(DistList)                                                                                                       \
 	LT(Note)                                                                                                           \
 	LT(StickyNote)                                                                                                     \
 	LT(Task)
@@ -107,13 +108,15 @@ inline MessageClass message_class(const pstsdk::pst &pst, const pstsdk::node_id 
  */
 template <MessageClass V, typename T = pstsdk::message>
 struct TypedBag {
+	pstsdk::node_id nid;
 	pstsdk::pst &pst;
 	pstsdk::node node;
 	pstsdk::property_bag bag;
 
 	std::optional<T> sdk_object;
 
-	inline TypedBag(pstsdk::pst &pst, pstsdk::node_id nid) : pst(pst), node(pst.get_db()->lookup_node(nid)), bag(node) {
+	inline TypedBag(pstsdk::pst &pst, pstsdk::node_id nid)
+	    : nid(nid), pst(pst), node(pst.get_db()->lookup_node(nid)), bag(node) {
 #ifdef DUCKPST_TYPED_BAG_CHECK_STRICT
 		auto message_class = message.get_property_bag().read_prop_if_exists<std::string>(PR_MESSAGE_CLASS_A);
 		if (!message_class)

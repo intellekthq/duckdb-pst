@@ -150,6 +150,10 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx, OpenFile
 				if (klass != pst::MessageClass::Task)
 					continue;
 				break;
+			case PSTReadFunctionMode::DistList:
+				if (klass != pst::MessageClass::DistList)
+					continue;
+				break;
 			default:
 				break;
 			}
@@ -256,6 +260,9 @@ unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, Table
 		break;
 	case PSTReadFunctionMode::StickyNote:
 		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::StickyNote>>(global_state, ec);
+		break;
+	case PSTReadFunctionMode::DistList:
+		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::DistList>>(global_state, ec);
 		break;
 	case PSTReadFunctionMode::Note:
 	default:

@@ -304,6 +304,17 @@ enum class TaskProjection {
 static const auto TASK_SCHEMA =
     LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) NOTE_CHILDREN(SCHEMA_CHILD) TASK_CHILDREN(SCHEMA_CHILD)});
 
+/* Distribution list schema */
+
+#define DLIST_CHILDREN(LT) LT(member_node_ids, LogicalType::LIST(LogicalType::UINTEGER))
+
+enum class DistributionListProjetion {
+	PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) DLIST_CHILDREN(SCHEMA_CHILD_NAME)
+};
+
+static const auto DLIST_SCHEMA =
+    LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) NOTE_CHILDREN(SCHEMA_CHILD) DLIST_CHILDREN(SCHEMA_CHILD)});
+
 /* Folder schema */
 
 #define FOLDER_CHILDREN(LT)                                                                                            \
