@@ -1,4 +1,3 @@
-#include <iostream>
 #include "duckdb/common/exception.hpp"
 #include "function_state.hpp"
 #include "row_serializer.hpp"
