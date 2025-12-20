@@ -17,17 +17,18 @@ using namespace pstsdk;
  * of the read is determined by the number of NDB nodes spooled.
  */
 class PSTReadGlobalState : public GlobalTableFunctionState {
-	boost::synchronized_value<queue<PSTInputPartition>> partitions;
+  boost::synchronized_value<queue<PSTInputPartition>> partitions;
 
 public:
-	PSTReadGlobalState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids);
-	const PSTReadTableFunctionData &bind_data;
+  PSTReadGlobalState(const PSTReadTableFunctionData &bind_data,
+                     vector<column_t> column_ids);
+  const PSTReadTableFunctionData &bind_data;
 
-	std::optional<PSTInputPartition> take_partition();
+  std::optional<PSTInputPartition> take_partition();
 
-	idx_t nodes_processed;
-	vector<column_t> column_ids;
-	idx_t MaxThreads() const override;
+  idx_t nodes_processed;
+  vector<column_t> column_ids;
+  idx_t MaxThreads() const override;
 };
 
 typedef vector<node_id>::iterator node_id_iterator;
@@ -38,46 +39,46 @@ typedef vector<node_id>::iterator node_id_iterator;
  */
 class PSTReadLocalState : public LocalTableFunctionState {
 protected:
-	PSTReadLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec);
+  PSTReadLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec);
 
-	std::optional<node_id_iterator> current;
-	std::optional<node_id_iterator> end;
+  std::optional<node_id_iterator> current;
+  std::optional<node_id_iterator> end;
 
-	/**
-	 * @brief Dequeue a partition from global state
-	 *
-	 * @return true A partition was received
-	 * @return false No partitions are available
-	 */
-	bool bind_partition();
+  /**
+   * @brief Dequeue a partition from global state
+   *
+   * @return true A partition was received
+   * @return false No partitions are available
+   */
+  bool bind_partition();
 
-	bool bind_next();
+  bool bind_next();
 
 public:
-	ExecutionContext &ec;
-	PSTReadGlobalState &global_state;
+  ExecutionContext &ec;
+  PSTReadGlobalState &global_state;
 
-	std::optional<pstsdk::pst> pst;
-	std::optional<PSTInputPartition> partition;
+  std::optional<pstsdk::pst> pst;
+  std::optional<PSTInputPartition> partition;
 
-	/**
-	 * @brief Is this partition done?
-	 *
-	 * @return true
-	 * @return false
-	 */
-	const bool finished();
+  /**
+   * @brief Is this partition done?
+   *
+   * @return true
+   * @return false
+   */
+  const bool finished();
 
-	/**
-	 * @brief Spools rows into DataChunk
-	 *
-	 * @param output Current data chunk
-	 * @return idx_t Number of rows
-	 */
-	virtual idx_t emit_rows(DataChunk &output) = 0;
+  /**
+   * @brief Spools rows into DataChunk
+   *
+   * @param output Current data chunk
+   * @return idx_t Number of rows
+   */
+  virtual idx_t emit_rows(DataChunk &output) = 0;
 
-	const vector<column_t> &column_ids();
-	const LogicalType &output_schema();
+  const vector<column_t> &column_ids();
+  const LogicalType &output_schema();
 };
 
 /**
@@ -89,16 +90,17 @@ public:
 template <pst::MessageClass V, typename T = pstsdk::message>
 class PSTReadConcreteLocalState : public PSTReadLocalState {
 public:
-	PSTReadConcreteLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec);
+  PSTReadConcreteLocalState(PSTReadGlobalState &global_state,
+                            ExecutionContext &ec);
 
-	virtual idx_t emit_rows(DataChunk &output) override;
+  virtual idx_t emit_rows(DataChunk &output) override;
 
-	/**
-	 * @brief Get the next item and move the iterator
-	 *
-	 * @return std::optional<t>
-	 */
-	std::optional<pst::TypedBag<V, T>> next();
+  /**
+   * @brief Get the next item and move the iterator
+   *
+   * @return std::optional<t>
+   */
+  std::optional<pst::TypedBag<V, T>> next();
 };
 
 } // namespace intellekt::duckpst

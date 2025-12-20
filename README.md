@@ -68,7 +68,7 @@ select given_name, surname from read_pst_contacts('https://github.com/intellekth
 └────────────┴─────────┘
 ```
 
-See the [Query Cookbook](#query-cookbook) for more examples of common PST analysis tasks.
+See [Common Queries](#common-queries) for more examples of common PST analysis tasks.
 
 ## Performance Features
 
@@ -133,6 +133,8 @@ All table functions return PST metadata fields. Message-based functions inherit 
 | `node_id`         | `UINTEGER`  | Node ID within PST                 |
 | `parent_node_id`  | `UINTEGER`  | Parent node ID                     |
 
+[↑ Back to Schemas](#schemas)
+
 ### Folders (`read_pst_folders`)
 
 Includes PST metadata plus:
@@ -144,6 +146,8 @@ Includes PST metadata plus:
 | `subfolder_count`       | `UINTEGER`  | Number of subfolders         |
 | `message_count`         | `BIGINT`    | Total messages in folder     |
 | `unread_message_count`  | `BIGINT`    | Unread message count         |
+
+[↑ Back to Schemas](#schemas)
 
 ### Base Messages (`read_pst_messages`, `read_pst_notes`)
 
@@ -173,6 +177,8 @@ Includes PST metadata plus:
 | `message_size`           | `UBIGINT`       | Message size in bytes                                              |
 | `conversation_topic`     | `VARCHAR`       | Conversation topic                                                 |
 | `internet_message_id`    | `VARCHAR`       | Internet message ID                                                |
+
+[↑ Back to Schemas](#schemas)
 
 ### Contacts (`read_pst_contacts`)
 
@@ -263,6 +269,8 @@ Includes PST metadata + base message fields + contact-specific fields:
 
 </details>
 
+[↑ Back to Schemas](#schemas)
+
 ### Distribution Lists (`read_pst_distribution_lists`)
 
 Includes PST metadata + base message fields + distribution list-specific fields:
@@ -272,6 +280,7 @@ Includes PST metadata + base message fields + distribution list-specific fields:
 | `member_node_ids`   | `LIST(UINTEGER)`  | Node IDs of contact members within the PST                     |
 | `one_off_members`   | `LIST(STRUCT)`    | List of ([one-off member struct](#one-off-member-struct))      |
 
+[↑ Back to Schemas](#schemas)
 
 ### Appointments (`read_pst_appointments`)
 
@@ -295,6 +304,8 @@ Includes PST metadata + base message fields + appointment-specific fields:
 | `recurrence_pattern`     | `VARCHAR`      | Recurrence pattern       |
 | `is_private`             | `BOOLEAN`      | Private event flag       |
 
+[↑ Back to Schemas](#schemas)
+
 ### Sticky Notes (`read_pst_sticky_notes`)
 
 Includes PST metadata + base message fields + sticky note-specific fields:
@@ -306,6 +317,8 @@ Includes PST metadata + base message fields + sticky note-specific fields:
 | `note_height` | `INTEGER`  | Note height      |
 | `note_x`      | `INTEGER`  | X position       |
 | `note_y`      | `INTEGER`  | Y position       |
+
+[↑ Back to Schemas](#schemas)
 
 ### Tasks (`read_pst_tasks`)
 
@@ -329,6 +342,8 @@ Includes PST metadata + base message fields + task-specific fields:
 | `is_team_task`      | `BOOLEAN`      | Team task flag                 |
 | `is_recurring`      | `BOOLEAN`      | Recurring task flag            |
 
+[↑ Back to Schemas](#schemas)
+
 ### Struct Schemas
 
 The following struct types are used in list fields throughout the message schemas:
@@ -346,6 +361,8 @@ Used in the `recipients` field. Each recipient contains:
 | `recipient_type`    | `ENUM`     | Recipient type: `TO`, `CC`, `BCC`                                    |
 | `recipient_type_raw`| `INTEGER`  | Raw recipient type value                                             |
 
+[↑ Back to Schemas](#schemas)
+
 #### Attachment Struct
 
 Used in the `attachments` field. Each attachment contains:
@@ -360,6 +377,8 @@ Used in the `attachments` field. Each attachment contains:
 | `is_message`         | `BOOLEAN`  | Whether attachment is an embedded message                            |
 | `bytes`              | `BLOB`     | Raw attachment data                                                  |
 
+[↑ Back to Schemas](#schemas)
+
 #### One-Off Member Struct
 
 Used in the `one_off_members` field of distribution lists. Each one-off member contains:
@@ -370,7 +389,9 @@ Used in the `one_off_members` field of distribution lists. Each one-off member c
 | `address_type`   | `VARCHAR`  | Address type (typically "SMTP")                          |
 | `email_address`  | `VARCHAR`  | Email address                                            |
 
-## Query Cookbook
+[↑ Back to Schemas](#schemas)
+
+## Common Queries
 
 These queries represent common use-cases for traversing PST files or doing basic e-discovery.
 
@@ -418,6 +439,8 @@ select * from dirtree;
 └─────────────────────────────────────────────────────────┘
 ```
 
+[↑ Back to Common Queries](#common-queries)
+
 ##### Find all parent directories of a given folder
 
 This traverses the directory tree upward, to the root of the PST file.
@@ -445,6 +468,7 @@ select * from parent_tree;
 └──────────────────────────┴─────────┴────────────────┘
 ```
 
+[↑ Back to Common Queries](#common-queries)
 
 ## Building
 

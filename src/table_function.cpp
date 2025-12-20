@@ -30,330 +30,383 @@
 namespace intellekt::duckpst {
 using namespace duckdb;
 
-PSTInputPartition::PSTInputPartition(const idx_t partition_index, const shared_ptr<pstsdk::pst> pst,
-                                     const OpenFileInfo file, const PSTReadFunctionMode mode, PartitionStatistics stats,
+PSTInputPartition::PSTInputPartition(const idx_t partition_index,
+                                     const shared_ptr<pstsdk::pst> pst,
+                                     const OpenFileInfo file,
+                                     const PSTReadFunctionMode mode,
+                                     PartitionStatistics stats,
                                      const vector<node_id> &&nodes)
-    : partition_index(partition_index), pst(pst), file(file), mode(mode), stats(std::move(stats)), nodes(nodes) {
-}
+    : partition_index(partition_index), pst(pst), file(file), mode(mode),
+      stats(std::move(stats)), nodes(nodes) {}
 
 PSTInputPartition::PSTInputPartition(const PSTInputPartition &other_partition)
-    : partition_index(other_partition.partition_index), pst(other_partition.pst), file(other_partition.file),
-      mode(other_partition.mode), stats(other_partition.stats), nodes(other_partition.nodes) {};
+    : partition_index(other_partition.partition_index),
+      pst(other_partition.pst), file(other_partition.file),
+      mode(other_partition.mode), stats(other_partition.stats),
+      nodes(other_partition.nodes){};
 
-PSTReadTableFunctionData::PSTReadTableFunctionData(ClientContext &ctx, const string &&path,
-                                                   const PSTReadFunctionMode mode,
-                                                   duckdb::named_parameter_map_t &named_parameters)
+PSTReadTableFunctionData::PSTReadTableFunctionData(
+    ClientContext &ctx, const string &&path, const PSTReadFunctionMode mode,
+    duckdb::named_parameter_map_t &named_parameters)
     : named_parameters(named_parameters), mode(mode) {
-	auto &fs = FileSystem::GetFileSystem(ctx);
+  auto &fs = FileSystem::GetFileSystem(ctx);
 
-	if (FileSystem::HasGlob(path)) {
-		files = fs.GlobFiles(path, ctx);
-	} else {
-		files.push_back(OpenFileInfo(path));
-	}
+  if (FileSystem::HasGlob(path)) {
+    files = fs.GlobFiles(path, ctx);
+  } else {
+    files.push_back(OpenFileInfo(path));
+  }
 
-	plan_input_partitions(ctx);
+  plan_input_partitions(ctx);
 }
 
 template <typename T>
-const T PSTReadTableFunctionData::parameter_or_default(const char *parameter_name, T default_value) const {
-	auto maybe_item = named_parameters.find(parameter_name);
-	if (maybe_item == named_parameters.end())
-		return default_value;
-	auto &[_, v] = *maybe_item;
-	return v.GetValue<T>();
+const T
+PSTReadTableFunctionData::parameter_or_default(const char *parameter_name,
+                                               T default_value) const {
+  auto maybe_item = named_parameters.find(parameter_name);
+  if (maybe_item == named_parameters.end())
+    return default_value;
+  auto &[_, v] = *maybe_item;
+  return v.GetValue<T>();
 }
 
 const idx_t PSTReadTableFunctionData::partition_size() const {
-	return std::max<idx_t>(parameter_or_default("partition_size", DEFAULT_PARTITION_SIZE), 1);
+  return std::max<idx_t>(
+      parameter_or_default("partition_size", DEFAULT_PARTITION_SIZE), 1);
 }
 
 const idx_t PSTReadTableFunctionData::read_body_size_bytes() const {
-	return parameter_or_default("read_body_size_bytes", DEFAULT_BODY_SIZE_BYTES);
+  return parameter_or_default("read_body_size_bytes", DEFAULT_BODY_SIZE_BYTES);
 }
 
 const bool PSTReadTableFunctionData::read_attachment_body() const {
-	return parameter_or_default("read_attachment_body", false);
+  return parameter_or_default("read_attachment_body", false);
 }
 
 const idx_t PSTReadTableFunctionData::read_limit() const {
-	return parameter_or_default("read_limit", std::numeric_limits<idx_t>().max());
+  return parameter_or_default("read_limit", std::numeric_limits<idx_t>().max());
 }
 
-void PSTReadTableFunctionData::bind_table_function_output_schema(vector<LogicalType> &return_types,
-                                                                 vector<string> &names) {
-	auto schema = output_schema(mode);
-	for (idx_t i = 0; i < StructType::GetChildCount(schema); ++i) {
-		names.emplace_back(StructType::GetChildName(schema, i));
-		return_types.emplace_back(StructType::GetChildType(schema, i));
-	}
+void PSTReadTableFunctionData::bind_table_function_output_schema(
+    vector<LogicalType> &return_types, vector<string> &names) {
+  auto schema = output_schema(mode);
+  for (idx_t i = 0; i < StructType::GetChildCount(schema); ++i) {
+    names.emplace_back(StructType::GetChildName(schema, i));
+    return_types.emplace_back(StructType::GetChildType(schema, i));
+  }
 }
 
 // TODO: this applies a filter when mode is not message
-void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx, OpenFileInfo &file, idx_t limit) {
-	auto pst = make_shared_ptr<pstsdk::pst>(pst::dfile::open(ctx, file));
-	vector<node_id> nodes;
+void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx,
+                                                    OpenFileInfo &file,
+                                                    idx_t limit) {
+  auto pst = make_shared_ptr<pstsdk::pst>(pst::dfile::open(ctx, file));
+  vector<node_id> nodes;
 
-	idx_t total_rows = 0;
+  idx_t total_rows = 0;
 
-	// Read the tail item if it exists as we start to spool the file
-	std::optional<PSTInputPartition> tail;
-	if (!this->partitions->empty())
-		tail.emplace(this->partitions->back());
+  // Read the tail item if it exists as we start to spool the file
+  std::optional<PSTInputPartition> tail;
+  if (!this->partitions->empty())
+    tail.emplace(this->partitions->back());
 
-	if (tail) {
-		total_rows = tail->stats.row_start.GetIndex() + tail->stats.count;
-	}
+  if (tail) {
+    total_rows = tail->stats.row_start + tail->stats.count;
+  }
 
-	if (mode == PSTReadFunctionMode::Folder) {
-		for (pstsdk::pst::folder_filter_iterator it = pst->folder_node_begin(); it != pst->folder_node_end(); ++it) {
-			if ((nodes.size() + total_rows) >= limit)
-				break;
-			nodes.emplace_back(it->id);
-		}
-	} else {
-		for (pstsdk::pst::message_filter_iterator it = pst->message_node_begin(); it != pst->message_node_end(); ++it) {
-			auto id = it->id;
+  if (mode == PSTReadFunctionMode::Folder) {
+    for (pstsdk::pst::folder_filter_iterator it = pst->folder_node_begin();
+         it != pst->folder_node_end(); ++it) {
+      if ((nodes.size() + total_rows) >= limit)
+        break;
+      nodes.emplace_back(it->id);
+    }
+  } else {
+    for (pstsdk::pst::message_filter_iterator it = pst->message_node_begin();
+         it != pst->message_node_end(); ++it) {
+      auto id = it->id;
 
-			if ((nodes.size() + total_rows) >= limit)
-				break;
+      if ((nodes.size() + total_rows) >= limit)
+        break;
 
-			if (mode == PSTReadFunctionMode::Message) {
-				nodes.emplace_back(id);
-				continue;
-			}
+      if (mode == PSTReadFunctionMode::Message) {
+        nodes.emplace_back(id);
+        continue;
+      }
 
-			auto message_node = pst->get_db().get()->lookup_node(id);
+      auto message_node = pst->get_db().get()->lookup_node(id);
 
-			// It really sucks that the only way to determine a message class is by reading and asserting the string.
-			// TODO: Heuristic based on attribute presence (i.e. is chaining a few prop_exists calls faster than the
-			// string assert?)
-			auto klass = pst::message_class(*pst, id);
-			switch (mode) {
-			case PSTReadFunctionMode::Appointment:
-				if (klass != pst::MessageClass::Appointment)
-					continue;
-				break;
-			case PSTReadFunctionMode::Contact:
-				if (klass != pst::MessageClass::Contact)
-					continue;
-				break;
-			case PSTReadFunctionMode::Note:
-				if (klass != pst::MessageClass::Note)
-					continue;
-				break;
-			case PSTReadFunctionMode::StickyNote:
-				if (klass != pst::MessageClass::StickyNote)
-					continue;
-				break;
-			case PSTReadFunctionMode::Task:
-				if (klass != pst::MessageClass::Task)
-					continue;
-				break;
-			case PSTReadFunctionMode::DistList:
-				if (klass != pst::MessageClass::DistList)
-					continue;
-				break;
-			default:
-				break;
-			}
+      // It really sucks that the only way to determine a message class is by
+      // reading and asserting the string.
+      // TODO: Heuristic based on attribute presence (i.e. is chaining a few
+      // prop_exists calls faster than the string assert?)
+      auto klass = pst::message_class(*pst, id);
+      switch (mode) {
+      case PSTReadFunctionMode::Appointment:
+        if (klass != pst::MessageClass::Appointment)
+          continue;
+        break;
+      case PSTReadFunctionMode::Contact:
+        if (klass != pst::MessageClass::Contact)
+          continue;
+        break;
+      case PSTReadFunctionMode::Note:
+        if (klass != pst::MessageClass::Note)
+          continue;
+        break;
+      case PSTReadFunctionMode::StickyNote:
+        if (klass != pst::MessageClass::StickyNote)
+          continue;
+        break;
+      case PSTReadFunctionMode::Task:
+        if (klass != pst::MessageClass::Task)
+          continue;
+        break;
+      case PSTReadFunctionMode::DistList:
+        if (klass != pst::MessageClass::DistList)
+          continue;
+        break;
+      default:
+        break;
+      }
 
-			nodes.emplace_back(id);
-		}
-	}
+      nodes.emplace_back(id);
+    }
+  }
 
-	// Lock the partition queue and append partitions in order their NIDs are ready
-	auto sync_partitions = this->partitions.synchronize();
-	std::optional<PSTInputPartition> sync_tail;
-	if (!sync_partitions->empty())
-		sync_tail.emplace(sync_partitions->back());
+  // Lock the partition queue and append partitions in order their NIDs are
+  // ready
+  auto sync_partitions = this->partitions.synchronize();
+  std::optional<PSTInputPartition> sync_tail;
+  if (!sync_partitions->empty())
+    sync_tail.emplace(sync_partitions->back());
 
-	// Reset the row count, as it may have changed
-	total_rows = 0;
-	if (sync_tail)
-		total_rows = sync_tail->stats.row_start.GetIndex() + sync_tail->stats.count;
+  // Reset the row count, as it may have changed
+  total_rows = 0;
+  if (sync_tail) {
+    total_rows = sync_tail->stats.row_start + sync_tail->stats.count;
+  }
 
-	while (!nodes.empty() && (total_rows < limit)) {
-		vector<node_id> partition_nodes;
-		PartitionStatistics stats;
+  while (!nodes.empty() && (total_rows < limit)) {
+    vector<node_id> partition_nodes;
+    PartitionStatistics stats;
 
-		stats.row_start = total_rows;
-		stats.count_type = CountType::COUNT_EXACT;
+    stats.row_start = total_rows;
+    stats.count_type = CountType::COUNT_EXACT;
 
-		for (idx_t i = 0; i < this->partition_size(); ++i) {
-			if (i >= nodes.size() || ((i + total_rows) >= limit))
-				break;
-			partition_nodes.emplace_back(nodes.back());
-			nodes.pop_back();
-		}
+    for (idx_t i = 0; i < this->partition_size(); ++i) {
+      if (i >= nodes.size() || ((i + total_rows) >= limit))
+        break;
+      partition_nodes.emplace_back(nodes.back());
+      nodes.pop_back();
+    }
 
-		stats.count = partition_nodes.size();
-		total_rows += partition_nodes.size();
+    stats.count = partition_nodes.size();
+    total_rows += partition_nodes.size();
 
-		sync_partitions->emplace_back<PSTInputPartition>(
-		    {sync_partitions->size(), pst, file, mode, stats, std::move(partition_nodes)});
-	}
+    sync_partitions->emplace_back<PSTInputPartition>(
+        {sync_partitions->size(), pst, file, mode, stats,
+         std::move(partition_nodes)});
+  }
 }
 
 void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
-	if (!partitions->empty())
-		return;
-	auto total_rows = 0;
-	auto limit = this->read_limit();
+  if (!partitions->empty())
+    return;
+  auto total_rows = 0;
+  auto limit = this->read_limit();
 
-	vector<std::future<void>> plan_tasks;
+  vector<std::future<void>> plan_tasks;
 
-	for (auto &file : files) {
-		plan_tasks.emplace_back(std::async(std::launch::async, &PSTReadTableFunctionData::plan_file_partitions, this,
-		                                   std::ref(ctx), std::ref(file), limit));
-	}
+  for (auto &file : files) {
+    plan_tasks.emplace_back(std::async(
+        std::launch::async, &PSTReadTableFunctionData::plan_file_partitions,
+        this, std::ref(ctx), std::ref(file), limit));
+  }
 
-	for (idx_t i = 0; i < files.size(); ++i) {
-		try {
-			plan_tasks[i].get();
-		} catch (std::exception &e) {
-			DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", files[i].path, e.what());
-		}
-	}
+  for (idx_t i = 0; i < files.size(); ++i) {
+    try {
+      plan_tasks[i].get();
+    } catch (std::exception &e) {
+      DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", files[i].path,
+                       e.what());
+    }
+  }
 
-	DUCKDB_LOG_INFO(ctx, "Planned %d partitions (%d files)", partitions->size(), files.size());
+  DUCKDB_LOG_INFO(ctx, "Planned %d partitions (%d files)", partitions->size(),
+                  files.size());
 }
 
-PSTReadTableFunctionData::PSTReadTableFunctionData(const PSTReadTableFunctionData &other_data) : mode(other_data.mode) {
-	files = other_data.files;
-	named_parameters = other_data.named_parameters;
+PSTReadTableFunctionData::PSTReadTableFunctionData(
+    const PSTReadTableFunctionData &other_data)
+    : mode(other_data.mode) {
+  files = other_data.files;
+  named_parameters = other_data.named_parameters;
 
-	for (auto &part : *other_data.partitions.synchronize()) {
-		this->partitions->emplace_back(PSTInputPartition(part));
-	}
+  for (auto &part : *other_data.partitions.synchronize()) {
+    this->partitions->emplace_back(PSTInputPartition(part));
+  }
 }
 
 unique_ptr<FunctionData> PSTReadTableFunctionData::Copy() const {
-	return make_uniq<PSTReadTableFunctionData>(*this);
+  return make_uniq<PSTReadTableFunctionData>(*this);
 }
 
-unique_ptr<GlobalTableFunctionState> PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
-	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-	auto global_state = make_uniq<PSTReadGlobalState>(bind_data, input.column_ids);
-	return global_state;
+unique_ptr<GlobalTableFunctionState>
+PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
+  auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
+  auto global_state =
+      make_uniq<PSTReadGlobalState>(bind_data, input.column_ids);
+  return global_state;
 }
 
-unique_ptr<LocalTableFunctionState> PSTReadInitLocal(ExecutionContext &ec, TableFunctionInitInput &input,
-                                                     GlobalTableFunctionState *global) {
-	auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-	auto &global_state = global->Cast<PSTReadGlobalState>();
+unique_ptr<LocalTableFunctionState>
+PSTReadInitLocal(ExecutionContext &ec, TableFunctionInitInput &input,
+                 GlobalTableFunctionState *global) {
+  auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
+  auto &global_state = global->Cast<PSTReadGlobalState>();
 
-	unique_ptr<PSTReadLocalState> local_state = nullptr;
+  unique_ptr<PSTReadLocalState> local_state = nullptr;
 
-	switch (bind_data.mode) {
-	case PSTReadFunctionMode::Folder:
-		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Note, pstsdk::folder>>(global_state, ec);
-		break;
-	case PSTReadFunctionMode::Contact:
-		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Contact>>(global_state, ec);
-		break;
-	case PSTReadFunctionMode::Appointment:
-		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Appointment>>(global_state, ec);
-		break;
-	case PSTReadFunctionMode::Task:
-		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Task>>(global_state, ec);
-		break;
-	case PSTReadFunctionMode::StickyNote:
-		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::StickyNote>>(global_state, ec);
-		break;
-	case PSTReadFunctionMode::DistList:
-		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::DistList>>(global_state, ec);
-		break;
-	case PSTReadFunctionMode::Note:
-	default:
-		local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Note>>(global_state, ec);
-		break;
-	}
+  switch (bind_data.mode) {
+  case PSTReadFunctionMode::Folder:
+    local_state = make_uniq<
+        PSTReadConcreteLocalState<pst::MessageClass::Note, pstsdk::folder>>(
+        global_state, ec);
+    break;
+  case PSTReadFunctionMode::Contact:
+    local_state =
+        make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Contact>>(
+            global_state, ec);
+    break;
+  case PSTReadFunctionMode::Appointment:
+    local_state =
+        make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Appointment>>(
+            global_state, ec);
+    break;
+  case PSTReadFunctionMode::Task:
+    local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Task>>(
+        global_state, ec);
+    break;
+  case PSTReadFunctionMode::StickyNote:
+    local_state =
+        make_uniq<PSTReadConcreteLocalState<pst::MessageClass::StickyNote>>(
+            global_state, ec);
+    break;
+  case PSTReadFunctionMode::DistList:
+    local_state =
+        make_uniq<PSTReadConcreteLocalState<pst::MessageClass::DistList>>(
+            global_state, ec);
+    break;
+  case PSTReadFunctionMode::Note:
+  default:
+    local_state = make_uniq<PSTReadConcreteLocalState<pst::MessageClass::Note>>(
+        global_state, ec);
+    break;
+  }
 
-	return local_state;
+  return local_state;
 }
 
-unique_ptr<FunctionData> PSTReadBind(ClientContext &ctx, TableFunctionBindInput &input,
-                                     vector<LogicalType> &return_types, vector<string> &names) {
-	auto path = input.inputs[0].GetValue<string>();
-	unique_ptr<PSTReadTableFunctionData> function_data = make_uniq<PSTReadTableFunctionData>(
-	    ctx, std::move(path), FUNCTIONS.at(input.table_function.name), input.named_parameters);
-	function_data->bind_table_function_output_schema(return_types, names);
-	return function_data;
+unique_ptr<FunctionData> PSTReadBind(ClientContext &ctx,
+                                     TableFunctionBindInput &input,
+                                     vector<LogicalType> &return_types,
+                                     vector<string> &names) {
+  auto path = input.inputs[0].GetValue<string>();
+  unique_ptr<PSTReadTableFunctionData> function_data =
+      make_uniq<PSTReadTableFunctionData>(
+          ctx, std::move(path), FUNCTIONS.at(input.table_function.name),
+          input.named_parameters);
+  function_data->bind_table_function_output_schema(return_types, names);
+  return function_data;
 }
 
-unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx, const FunctionData *data) {
-	auto pst_data = data->Cast<PSTReadTableFunctionData>();
-	idx_t max_cardinality = 0;
+unique_ptr<NodeStatistics> PSTReadCardinality(ClientContext &ctx,
+                                              const FunctionData *data) {
+  auto pst_data = data->Cast<PSTReadTableFunctionData>();
+  idx_t max_cardinality = 0;
 
-	for (auto &partition : pst_data.partitions.get()) {
-		max_cardinality += partition.stats.count;
-	}
+  for (auto &partition : pst_data.partitions.get()) {
+    max_cardinality += partition.stats.count;
+  }
 
-	auto stats = make_uniq<NodeStatistics>(max_cardinality, max_cardinality);
-	return stats;
+  auto stats = make_uniq<NodeStatistics>(max_cardinality, max_cardinality);
+  return stats;
 }
 
-vector<PartitionStatistics> PSTPartitionStats(ClientContext &ctx, GetPartitionStatsInput &input) {
-	if (!input.bind_data)
-		return vector<PartitionStatistics>();
+vector<PartitionStatistics> PSTPartitionStats(ClientContext &ctx,
+                                              GetPartitionStatsInput &input) {
+  if (!input.bind_data)
+    return vector<PartitionStatistics>();
 
-	auto pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
+  auto pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
 
-	vector<PartitionStatistics> stats;
-	for (auto &part : pst_data.partitions.get()) {
-		stats.push_back(part.stats);
-	}
+  vector<PartitionStatistics> stats;
+  for (auto &part : pst_data.partitions.get()) {
+    stats.push_back(part.stats);
+  }
 
-	return stats;
+  return stats;
 }
 
 // TODO
-TablePartitionInfo PSTPartitionInfo(ClientContext &ctx, TableFunctionPartitionInput &input) {
-	return TablePartitionInfo::NOT_PARTITIONED;
+TablePartitionInfo PSTPartitionInfo(ClientContext &ctx,
+                                    TableFunctionPartitionInput &input) {
+  return TablePartitionInfo::NOT_PARTITIONED;
 }
 
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
                        const GlobalTableFunctionState *global_state) {
-	auto &pst_state = global_state->Cast<PSTReadGlobalState>();
-	auto cardinality = PSTReadCardinality(context, bind_data)->estimated_cardinality;
-	return (100.0 * pst_state.nodes_processed) / std::max<idx_t>(cardinality, 1);
+  auto &pst_state = global_state->Cast<PSTReadGlobalState>();
+  auto cardinality =
+      PSTReadCardinality(context, bind_data)->estimated_cardinality;
+  return (100.0 * pst_state.nodes_processed) / std::max<idx_t>(cardinality, 1);
 }
 
-InsertionOrderPreservingMap<string> PSTDynamicToString(duckdb::TableFunctionDynamicToStringInput &input) {
-	auto &pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
+InsertionOrderPreservingMap<string>
+PSTDynamicToString(duckdb::TableFunctionDynamicToStringInput &input) {
+  auto &pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
 
-	InsertionOrderPreservingMap<string> meta;
+  InsertionOrderPreservingMap<string> meta;
 
-	meta.insert(make_pair("Files read", std::to_string(pst_data.files.size())));
-	meta.insert(make_pair("Partitions read", std::to_string(pst_data.partitions->size())));
-	meta.insert(make_pair("Partition size", std::to_string(pst_data.partition_size())));
+  meta.insert(make_pair("Files read", std::to_string(pst_data.files.size())));
+  meta.insert(make_pair("Partitions read",
+                        std::to_string(pst_data.partitions->size())));
+  meta.insert(
+      make_pair("Partition size", std::to_string(pst_data.partition_size())));
 
-	return meta;
+  return meta;
 }
 
 // TODO: TIL about `MultiFileReader`
-virtual_column_map_t PSTVirtualColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data) {
-	DUCKDB_LOG_DEBUG(ctx, "get_virtual_columns [PSTVirtualColumns]");
+virtual_column_map_t PSTVirtualColumns(ClientContext &ctx,
+                                       optional_ptr<FunctionData> bind_data) {
+  DUCKDB_LOG_DEBUG(ctx, "get_virtual_columns [PSTVirtualColumns]");
 
-	virtual_column_map_t virtual_cols;
+  virtual_column_map_t virtual_cols;
 
-	virtual_cols.emplace(make_pair(schema::PST_VCOL_NODE_ID, TableColumn("__node_id", schema::PST_VCOL_NODE_ID_TYPE)));
-	virtual_cols.emplace(
-	    make_pair(schema::PST_VCOL_PARTITION_INDEX, TableColumn("__partition", schema::PST_VCOL_PARTITION_INDEX_TYPE)));
+  virtual_cols.emplace(
+      make_pair(schema::PST_VCOL_NODE_ID,
+                TableColumn("__node_id", schema::PST_VCOL_NODE_ID_TYPE)));
+  virtual_cols.emplace(make_pair(
+      schema::PST_VCOL_PARTITION_INDEX,
+      TableColumn("__partition", schema::PST_VCOL_PARTITION_INDEX_TYPE)));
 
-	return virtual_cols;
+  return virtual_cols;
 }
 
-vector<column_t> PSTRowIDColumns(ClientContext &ctx, optional_ptr<FunctionData> bind_data) {
-	DUCKDB_LOG_DEBUG(ctx, "get_row_id_columns [PSTRowIDColumns]");
-	return {schema::PST_VCOL_NODE_ID, schema::PST_VCOL_PARTITION_INDEX};
+vector<column_t> PSTRowIDColumns(ClientContext &ctx,
+                                 optional_ptr<FunctionData> bind_data) {
+  DUCKDB_LOG_DEBUG(ctx, "get_row_id_columns [PSTRowIDColumns]");
+  return {schema::PST_VCOL_NODE_ID, schema::PST_VCOL_PARTITION_INDEX};
 }
 
-void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input, DataChunk &output) {
-	auto &local_state = input.local_state->Cast<PSTReadLocalState>();
+void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input,
+                     DataChunk &output) {
+  auto &local_state = input.local_state->Cast<PSTReadLocalState>();
 
-	idx_t rows = local_state.emit_rows(output);
-	output.SetCardinality(rows);
+  idx_t rows = local_state.emit_rows(output);
+  output.SetCardinality(rows);
 }
 } // namespace intellekt::duckpst

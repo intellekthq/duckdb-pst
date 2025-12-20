@@ -1,5 +1,13 @@
 {
-        "dependencies": [],
+        "dependencies": [
+                "boost-thread",
+                "boost-iterator",
+                "boost-range",
+                "boost-iostreams",
+                "boost-core",
+                "boost-config",
+                "boost-utility"
+        ],
         "vcpkg-configuration": {
                 "overlay-ports": [
                         "./extension-ci-tools/vcpkg_ports"

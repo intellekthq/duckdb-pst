@@ -1,6 +1,6 @@
 # name: test/sql/read_pst_folders.test
 # description: Test read_pst_folders table function
-# group: [pst]
+# group: [sql]
 
 require pst
 

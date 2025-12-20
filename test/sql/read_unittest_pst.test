@@ -1,6 +1,6 @@
 # name: test/sql/read_unittest_pst.test
 # description: 
-# group: [pst]
+# group: [sql]
 
 require pst
 

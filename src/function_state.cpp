@@ -16,122 +16,126 @@ using namespace duckdb;
 using namespace pstsdk;
 
 // PSTReadGlobalState
-PSTReadGlobalState::PSTReadGlobalState(const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids)
+PSTReadGlobalState::PSTReadGlobalState(
+    const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids)
     : bind_data(bind_data), column_ids(std::move(column_ids)) {
-	auto sync_partitions = partitions.synchronize();
-	for (auto &part : bind_data.partitions.get()) {
-		sync_partitions->push(part);
-	}
+  auto sync_partitions = partitions.synchronize();
+  for (auto &part : bind_data.partitions.get()) {
+    sync_partitions->push(part);
+  }
 
-	nodes_processed = 0;
+  nodes_processed = 0;
 }
 
 std::optional<PSTInputPartition> PSTReadGlobalState::take_partition() {
-	auto sync_partitions = partitions.synchronize();
-	if (sync_partitions->empty())
-		return {};
+  auto sync_partitions = partitions.synchronize();
+  if (sync_partitions->empty())
+    return {};
 
-	auto part = sync_partitions->front();
+  auto part = sync_partitions->front();
 
-	// TODO: it would be more honest if this happened after emission
-	nodes_processed += part.stats.count;
+  // TODO: it would be more honest if this happened after emission
+  nodes_processed += part.stats.count;
 
-	sync_partitions->pop();
-	return std::move(part);
+  sync_partitions->pop();
+  return std::move(part);
 }
 
 idx_t PSTReadGlobalState::MaxThreads() const {
-	return std::max<idx_t>(partitions->size(), 1);
+  return std::max<idx_t>(partitions->size(), 1);
 }
 
 // PSTReadLocalState
-PSTReadLocalState::PSTReadLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec)
+PSTReadLocalState::PSTReadLocalState(PSTReadGlobalState &global_state,
+                                     ExecutionContext &ec)
     : global_state(global_state), ec(ec) {
-	bind_partition();
-	if (partition.has_value()) {
-		current.emplace(partition->nodes.begin());
-		end.emplace(partition->nodes.end());
-	}
+  bind_partition();
+  if (partition.has_value()) {
+    current.emplace(partition->nodes.begin());
+    end.emplace(partition->nodes.end());
+  }
 }
 
 bool PSTReadLocalState::bind_partition() {
-	auto next_partition = global_state.take_partition();
-	if (!next_partition.has_value())
-		return false;
+  auto next_partition = global_state.take_partition();
+  if (!next_partition.has_value())
+    return false;
 
-	bool skip_bind_pst = partition.has_value() && (next_partition->file.path == partition->file.path);
-	partition.emplace(std::move(*next_partition));
-	if (!skip_bind_pst)
-		pst.emplace(pstsdk::pst(*partition->pst));
+  bool skip_bind_pst = partition.has_value() &&
+                       (next_partition->file.path == partition->file.path);
+  partition.emplace(std::move(*next_partition));
+  if (!skip_bind_pst)
+    pst.emplace(pstsdk::pst(*partition->pst));
 
-	return true;
+  return true;
 }
 
 const vector<column_t> &PSTReadLocalState::column_ids() {
-	return global_state.column_ids;
+  return global_state.column_ids;
 }
 
 const LogicalType &PSTReadLocalState::output_schema() {
-	return duckpst::output_schema(global_state.bind_data.mode);
+  return duckpst::output_schema(global_state.bind_data.mode);
 }
 
 const bool PSTReadLocalState::finished() {
-	return (!current) || (current == end);
+  return (!current) || (current == end);
 }
 
 bool PSTReadLocalState::bind_next() {
-	while (finished()) {
-		if (!bind_partition())
-			return false;
-		current.emplace(partition->nodes.begin());
-		end.emplace(partition->nodes.end());
-	}
+  while (finished()) {
+    if (!bind_partition())
+      return false;
+    current.emplace(partition->nodes.begin());
+    end.emplace(partition->nodes.end());
+  }
 
-	return true;
+  return true;
 }
 
 // PSTReadConcreteLocalState
 template <pst::MessageClass V, typename T>
-PSTReadConcreteLocalState<V, T>::PSTReadConcreteLocalState(PSTReadGlobalState &global_state, ExecutionContext &ec)
-    : PSTReadLocalState(global_state, ec) {
-}
+PSTReadConcreteLocalState<V, T>::PSTReadConcreteLocalState(
+    PSTReadGlobalState &global_state, ExecutionContext &ec)
+    : PSTReadLocalState(global_state, ec) {}
 
 template <pst::MessageClass V, typename T>
 std::optional<pst::TypedBag<V, T>> PSTReadConcreteLocalState<V, T>::next() {
-	// If the current state is finished, keep going until we can keep binding
-	while (finished() && bind_next()) {
-	}
+  // If the current state is finished, keep going until we can keep binding
+  while (finished() && bind_next()) {
+  }
 
-	// If we can't bind anymore and are finished, we're really finished
-	if (finished())
-		return {};
+  // If we can't bind anymore and are finished, we're really finished
+  if (finished())
+    return {};
 
-	pst::TypedBag<V, T> typed_bag(*pst, **current);
+  pst::TypedBag<V, T> typed_bag(*pst, **current);
 
-	++(*current);
-	return typed_bag;
+  ++(*current);
+  return typed_bag;
 }
 
 template <pst::MessageClass V, typename T>
 idx_t PSTReadConcreteLocalState<V, T>::emit_rows(DataChunk &output) {
-	idx_t rows = 0;
+  idx_t rows = 0;
 
-	for (idx_t i = 0; i < STANDARD_VECTOR_SIZE; ++i) {
-		auto item = next();
+  for (idx_t i = 0; i < STANDARD_VECTOR_SIZE; ++i) {
+    auto item = next();
 
-		if (!item) {
-			break;
-		}
+    if (!item) {
+      break;
+    }
 
-		row_serializer::into_row<pst::TypedBag<V, T>>(*this, output, *item, i);
+    row_serializer::into_row<pst::TypedBag<V, T>>(*this, output, *item, i);
 
-		++rows;
-	}
+    ++rows;
+  }
 
-	return rows;
+  return rows;
 }
 
-template class PSTReadConcreteLocalState<pst::MessageClass::Note, pstsdk::folder>;
+template class PSTReadConcreteLocalState<pst::MessageClass::Note,
+                                         pstsdk::folder>;
 template class PSTReadConcreteLocalState<pst::MessageClass::Note>;
 template class PSTReadConcreteLocalState<pst::MessageClass::Contact>;
 template class PSTReadConcreteLocalState<pst::MessageClass::Appointment>;

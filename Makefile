@@ -4,6 +4,9 @@ PROJ_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 EXT_NAME=pst
 EXT_CONFIG=${PROJ_DIR}extension_config.cmake
 
+# properly (?) set c++17
+EXT_FLAGS=-DCMAKE_CXX_STANDARD=17
+
 # Include the Makefile from extension-ci-tools
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
 

@@ -1,6 +1,6 @@
 # name: test/sql/table_function_parameters.test
 # description: 
-# group: [pst]
+# group: [sql]
 
 require pst
 
