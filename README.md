@@ -96,6 +96,7 @@ All table functions return PST metadata fields. Message-based functions inherit 
 - [Appointments](#appointments-read_pst_appointments) - Calendar/meeting fields
 - [Sticky Notes](#sticky-notes-read_pst_sticky_notes) - Sticky note fields
 - [Tasks](#tasks-read_pst_tasks) - Task management fields
+- [Struct Schemas](#struct-schemas) - Schemas for recipients, attachments, and one-off members
 
 ### Common PST Metadata (all functions)
 
@@ -123,30 +124,30 @@ Includes PST metadata plus:
 
 Includes PST metadata plus:
 
-| Field                    | Type            | Description                                                                      |
-|--------------------------|-----------------|----------------------------------------------------------------------------------|
-| `subject`                | `VARCHAR`       | Message subject                                                                  |
-| `body`                   | `VARCHAR`       | Plain text body                                                                  |
-| `body_html`              | `VARCHAR`       | HTML body                                                                        |
-| `display_name`           | `VARCHAR`       | Display name                                                                     |
-| `comment`                | `VARCHAR`       | Comment field                                                                    |
-| `sender_name`            | `VARCHAR`       | Sender display name                                                              |
-| `sender_email_address`   | `VARCHAR`       | Sender email                                                                     |
-| `recipients`             | `LIST(STRUCT)`  | List of recipients with `display_name`, `email_address`, `recipient_type`, etc.  |
-| `has_attachments`        | `BOOLEAN`       | Whether message has attachments                                                  |
-| `attachment_count`       | `UINTEGER`      | Number of attachments                                                            |
-| `attachments`            | `LIST(STRUCT)`  | List of attachments with `filename`, `mime_type`, `size`, `bytes`, etc.          |
-| `importance`             | `ENUM`          | Message importance: `LOW`, `NORMAL`, `HIGH`                                      |
-| `priority`               | `ENUM`          | Message priority: `NONURGENT`, `NORMAL`, `URGENT`                                |
-| `sensitivity`            | `ENUM`          | Message sensitivity: `NONE`, `PERSONAL`, `PRIVATE`, `CONFIDENTIAL`               |
-| `creation_time`          | `TIMESTAMP_S`   | Creation timestamp                                                               |
-| `last_modified`          | `TIMESTAMP_S`   | Last modification timestamp                                                      |
-| `message_delivery_time`  | `TIMESTAMP_S`   | Delivery timestamp                                                               |
-| `message_class`          | `VARCHAR`       | MAPI message class (e.g., `IPM.Note`, `IPM.Contact`)                             |
-| `message_flags`          | `INTEGER`       | Message flags                                                                    |
-| `message_size`           | `UBIGINT`       | Message size in bytes                                                            |
-| `conversation_topic`     | `VARCHAR`       | Conversation topic                                                               |
-| `internet_message_id`    | `VARCHAR`       | Internet message ID                                                              |
+| Field                    | Type            | Description                                                        |
+|--------------------------|-----------------|--------------------------------------------------------------------|
+| `subject`                | `VARCHAR`       | Message subject                                                    |
+| `body`                   | `VARCHAR`       | Plain text body                                                    |
+| `body_html`              | `VARCHAR`       | HTML body                                                          |
+| `display_name`           | `VARCHAR`       | Display name                                                       |
+| `comment`                | `VARCHAR`       | Comment field                                                      |
+| `sender_name`            | `VARCHAR`       | Sender display name                                                |
+| `sender_email_address`   | `VARCHAR`       | Sender email                                                       |
+| `recipients`             | `LIST(STRUCT)`  | List of [recipients](#recipient-struct)                            |
+| `has_attachments`        | `BOOLEAN`       | Whether message has attachments                                    |
+| `attachment_count`       | `UINTEGER`      | Number of attachments                                              |
+| `attachments`            | `LIST(STRUCT)`  | List of [attachments](#attachment-struct)                          |
+| `importance`             | `ENUM`          | Message importance: `LOW`, `NORMAL`, `HIGH`                        |
+| `priority`               | `ENUM`          | Message priority: `NONURGENT`, `NORMAL`, `URGENT`                  |
+| `sensitivity`            | `ENUM`          | Message sensitivity: `NONE`, `PERSONAL`, `PRIVATE`, `CONFIDENTIAL` |
+| `creation_time`          | `TIMESTAMP_S`   | Creation timestamp                                                 |
+| `last_modified`          | `TIMESTAMP_S`   | Last modification timestamp                                        |
+| `message_delivery_time`  | `TIMESTAMP_S`   | Delivery timestamp                                                 |
+| `message_class`          | `VARCHAR`       | MAPI message class (e.g., `IPM.Note`, `IPM.Contact`)               |
+| `message_flags`          | `INTEGER`       | Message flags                                                      |
+| `message_size`           | `UBIGINT`       | Message size in bytes                                              |
+| `conversation_topic`     | `VARCHAR`       | Conversation topic                                                 |
+| `internet_message_id`    | `VARCHAR`       | Internet message ID                                                |
 
 ### Contacts (`read_pst_contacts`)
 
@@ -241,10 +242,10 @@ Includes PST metadata + base message fields + contact-specific fields:
 
 Includes PST metadata + base message fields + distribution list-specific fields:
 
-| Field               | Type                                                                      | Description                                                     |
-|---------------------|---------------------------------------------------------------------------|----------------------------------------------------------------|
-| `member_node_ids`   | `LIST(UINTEGER)`                                                          | Node IDs of contact members within the PST                     |
-| `one_off_members`   | `LIST(STRUCT(display_name VARCHAR, address_type VARCHAR, email_address VARCHAR))` | External email addresses not in contacts (one-off recipients)  |
+| Field               | Type              | Description                                                    |
+|---------------------|-------------------|----------------------------------------------------------------|
+| `member_node_ids`   | `LIST(UINTEGER)`  | Node IDs of contact members within the PST                     |
+| `one_off_members`   | `LIST(STRUCT)`    | List of ([one-off member struct](#one-off-member-struct))      |
 
 
 ### Appointments (`read_pst_appointments`)
@@ -302,6 +303,47 @@ Includes PST metadata + base message fields + task-specific fields:
 | `last_user`         | `VARCHAR`      | Last user to modify            |
 | `is_team_task`      | `BOOLEAN`      | Team task flag                 |
 | `is_recurring`      | `BOOLEAN`      | Recurring task flag            |
+
+### Struct Schemas
+
+The following struct types are used in list fields throughout the message schemas:
+
+#### Recipient Struct
+
+Used in the `recipients` field. Each recipient contains:
+
+| Field               | Type       | Description                                                          |
+|---------------------|------------|----------------------------------------------------------------------|
+| `display_name`      | `VARCHAR`  | Display name of the recipient                                        |
+| `account_name`      | `VARCHAR`  | Account name                                                         |
+| `email_address`     | `VARCHAR`  | Email address                                                        |
+| `address_type`      | `VARCHAR`  | Address type (e.g., "SMTP", "EX")                                    |
+| `recipient_type`    | `ENUM`     | Recipient type: `TO`, `CC`, `BCC`                                    |
+| `recipient_type_raw`| `INTEGER`  | Raw recipient type value                                             |
+
+#### Attachment Struct
+
+Used in the `attachments` field. Each attachment contains:
+
+| Field                | Type       | Description                                                          |
+|----------------------|------------|----------------------------------------------------------------------|
+| `filename`           | `VARCHAR`  | Attachment filename                                                  |
+| `mime_type`          | `VARCHAR`  | MIME type of the attachment                                          |
+| `size`               | `UBIGINT`  | Attachment size in bytes                                             |
+| `attach_content_id`  | `VARCHAR`  | Content ID for inline attachments                                    |
+| `attach_method`      | `ENUM`     | Attachment method: `NO_ATTACHMENT`, `BY_VALUE`, `BY_REFERENCE`, `BY_REF_RESOLVE`, `BY_REF_ONLY`, `EMBEDDED_MESSAGE`, `OLE` |
+| `is_message`         | `BOOLEAN`  | Whether attachment is an embedded message                            |
+| `bytes`              | `BLOB`     | Raw attachment data                                                  |
+
+#### One-Off Member Struct
+
+Used in the `one_off_members` field of distribution lists. Each one-off member contains:
+
+| Field            | Type       | Description                                              |
+|------------------|------------|----------------------------------------------------------|
+| `display_name`   | `VARCHAR`  | Display name (e.g., "John Doe (john@example.com)")       |
+| `address_type`   | `VARCHAR`  | Address type (typically "SMTP")                          |
+| `email_address`  | `VARCHAR`  | Email address                                            |
 
 ## Building
 
