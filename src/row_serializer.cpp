@@ -859,7 +859,7 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 
 	prop_id named_prop_id = 0;
 	switch (schema_col) {
-	case static_cast<int>(schema::DistributionListProjetion::one_off_members): {
+	case static_cast<int>(schema::DistributionListProjection::one_off_members): {
 		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_address, PidLidDistributionListOneOffMembers);
 
 		if (!prop_bag.prop_exists(named_prop_id)) {
@@ -887,7 +887,7 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 		output.SetValue(column_index, row_number, Value::LIST(schema::ONE_OFF_RECIPIENT_SCHEMA, oneoff_recipients));
 		break;
 	}
-	case static_cast<int>(schema::DistributionListProjetion::member_node_ids): {
+	case static_cast<int>(schema::DistributionListProjection::member_node_ids): {
 		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_address, PidLidDistributionListMembers);
 
 		if (!prop_bag.prop_exists(named_prop_id)) {

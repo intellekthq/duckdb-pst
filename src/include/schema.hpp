@@ -317,7 +317,7 @@ static const auto TASK_SCHEMA =
 	LT(member_node_ids, LogicalType::LIST(LogicalType::UINTEGER))                                                      \
 	LT(one_off_members, LogicalType::LIST(ONE_OFF_RECIPIENT_SCHEMA))
 
-enum class DistributionListProjetion {
+enum class DistributionListProjection {
 	PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) DLIST_CHILDREN(SCHEMA_CHILD_NAME)
 };
 
