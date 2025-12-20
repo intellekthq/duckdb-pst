@@ -83,6 +83,16 @@ The extension provides specialized table functions for different MAPI message ty
 | `read_pst_sticky_notes`       | `IPM.StickyNote`    | (Filtered) only sticky note items                        |
 | `read_pst_tasks`              | `IPM.Task`          | (Filtered) task items with task-specific fields          |
 
+### Function Parameters
+
+All table functions accept the following named parameters. Note that **by default** message bodies are truncated to 1M and attachment contents are not read.
+
+| Parameter              | Default   | Description                                                                        |
+|------------------------|-----------|------------------------------------------------------------------------------------|
+| `read_body_size_bytes` | `1000000` | Maximum bytes to read into `body` and `body_html`. Set to 0 to read all.           |
+| `read_attachment_body` | `false`   | Whether to read attachment bytes into the `bytes` field                            |
+| `read_limit`           | `NULL`    | Maximum number of items to read (applied during planning, stops crawling fs)       |
+
 ## Schemas
 
 All table functions return PST metadata fields. Message-based functions inherit base `IPM.Note` fields plus type-specific additions.
