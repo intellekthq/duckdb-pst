@@ -137,5 +137,6 @@ template class PSTReadConcreteLocalState<pst::MessageClass::Contact>;
 template class PSTReadConcreteLocalState<pst::MessageClass::Appointment>;
 template class PSTReadConcreteLocalState<pst::MessageClass::StickyNote>;
 template class PSTReadConcreteLocalState<pst::MessageClass::Task>;
+template class PSTReadConcreteLocalState<pst::MessageClass::DistList>;
 
 } // namespace intellekt::duckpst

@@ -1,5 +1,7 @@
+#include "duckdb/common/exception.hpp"
 #include "function_state.hpp"
 #include "row_serializer.hpp"
+#include "pstsdk/pst/entryid.h"
 #include "schema.hpp"
 
 #include "duckdb/common/types.hpp"
@@ -16,6 +18,7 @@
 #include "table_function.hpp"
 
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 
 namespace intellekt::duckpst::row_serializer {
@@ -846,6 +849,82 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 	}
 }
 
+template <>
+void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output,
+                       pst::TypedBag<pst::MessageClass::DistList> &dlist, idx_t row_number, idx_t column_index) {
+	auto &prop_bag = dlist.bag;
+	auto schema_col = local_state.column_ids()[column_index];
+	auto &col_type = StructType::GetChildType(local_state.output_schema(), schema_col);
+
+	prop_id named_prop_id = 0;
+	switch (schema_col) {
+	case static_cast<int>(schema::DistributionListProjection::one_off_members): {
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_address, PidLidDistributionListOneOffMembers);
+
+		if (!prop_bag.prop_exists(named_prop_id)) {
+			output.SetValue(column_index, row_number, Value(nullptr));
+			break;
+		}
+
+		auto entry_ids = prop_bag.read_prop_array<std::vector<pstsdk::byte>>(named_prop_id);
+		vector<Value> oneoff_recipients;
+		for (auto &entry : entry_ids) {
+			auto header = reinterpret_cast<pstsdk::recipient_oneoff_entry_id *>(&entry.data()[0]);
+			if (!pstsdk::guid_eq(header->provider_uid, pstsdk::provider_uid_recipient_oneoff)) {
+				throw InvalidInputException(
+				    "Unknown DistributionList entry ProviderUID, only One-Off entries are supported for this property");
+			}
+
+			vector<Value> one_off_recipient;
+			for (auto &s : header->read_strings()) {
+				one_off_recipient.emplace_back(Value(s));
+			}
+
+			oneoff_recipients.emplace_back(Value::STRUCT(schema::ONE_OFF_RECIPIENT_SCHEMA, one_off_recipient));
+		}
+
+		output.SetValue(column_index, row_number, Value::LIST(schema::ONE_OFF_RECIPIENT_SCHEMA, oneoff_recipients));
+		break;
+	}
+	case static_cast<int>(schema::DistributionListProjection::member_node_ids): {
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_address, PidLidDistributionListMembers);
+
+		if (!prop_bag.prop_exists(named_prop_id)) {
+			output.SetValue(column_index, row_number, Value(nullptr));
+			break;
+		}
+
+		auto entry_ids = prop_bag.read_prop_array<std::vector<pstsdk::byte>>(named_prop_id);
+		vector<duckdb::Value> contact_nids;
+
+		for (auto &entry : entry_ids) {
+			auto header = reinterpret_cast<pstsdk::distribution_list_wrapped_entry_id *>(&entry.data()[0]);
+
+			if (!pstsdk::guid_eq(header->provider_uid, pstsdk::provider_uid_wrapped_entry_id)) {
+				throw InvalidInputException(
+				    "Unknown DistributionList entry ProviderUID, only WrappedEntryId supported");
+			}
+
+			if (header->get_type() != pstsdk::distribution_list_entry_id_type::contact) {
+				throw InvalidInputException("Only contact entries are supported");
+			}
+
+			// TODO: In a PST file, this is the standard 24 byte entry ID format (last 4 bytes nid)
+			// but it could be a "Message EntryID Structure" which is different
+			// https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxocntc/02656215-1cb0-4b06-a077-b07e756216be
+			pstsdk::node_id contact_nid;
+			memcpy(&contact_nid, &header->data[20], sizeof(pstsdk::node_id));
+			contact_nids.emplace_back(Value::UINTEGER(contact_nid));
+		}
+
+		output.SetValue(column_index, row_number, Value::LIST(contact_nids));
+		break;
+	}
+	default:
+		break;
+	}
+}
+
 template <typename Item>
 void into_row(PSTReadLocalState &local_state, duckdb::DataChunk &output, Item &item, idx_t row_number) {
 	for (idx_t col_idx = 0; col_idx < local_state.column_ids().size(); ++col_idx) {
@@ -855,7 +934,7 @@ void into_row(PSTReadLocalState &local_state, duckdb::DataChunk &output, Item &i
 		switch (schema_col) {
 		case static_cast<int>(schema::PSTProjection::node_id):
 		case schema::PST_VCOL_NODE_ID:
-			output.SetValue(col_idx, row_number, Value::UINTEGER(item.node.get_id()));
+			output.SetValue(col_idx, row_number, Value::UINTEGER(item.nid));
 			break;
 		case static_cast<int>(schema::PSTProjection::parent_node_id):
 			output.SetValue(col_idx, row_number,
@@ -921,5 +1000,10 @@ template void into_row<pst::TypedBag<pst::MessageClass::Task>>(PSTReadLocalState
                                                                duckdb::DataChunk &output,
                                                                pst::TypedBag<pst::MessageClass::Task> &item,
                                                                idx_t row_number);
+
+template void into_row<pst::TypedBag<pst::MessageClass::DistList>>(PSTReadLocalState &local_state,
+                                                                   duckdb::DataChunk &output,
+                                                                   pst::TypedBag<pst::MessageClass::DistList> &item,
+                                                                   idx_t row_number);
 
 } // namespace intellekt::duckpst::row_serializer
