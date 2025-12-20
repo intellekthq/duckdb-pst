@@ -36,17 +36,37 @@ test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE
 test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	33218	32802	IPF.Configuration	Conversation Action Settings	0	0	0
 test/unittest.pst	Outlook Data File	\xD8\xD3\x1B\x11\x8C:;J\x9D\x88\x16hb\x07\xE7b	33250	32802	IPF.Configuration	Quick Step Settings	0	0	0
 
-# Test read_pst_notes - should have 6 notes (IPM.Note)
+# Test read_pst_notes - should have 5 notes (IPM.Note)
 query I
 SELECT count(*) FROM read_pst_notes('test/unittest.pst')
 ----
-6
+5
 
 # Test read_pst_contacts - should have 2 contacts
 query I
 SELECT count(*) FROM read_pst_contacts('test/unittest.pst')
 ----
 2
+
+# Test read_pst_distribution_lists - should have 1 distribution list
+query I
+SELECT count(*) FROM read_pst_distribution_lists('test/unittest.pst')
+----
+1
+
+# Test distribution list details
+query IIII
+SELECT node_id, parent_node_id, display_name, member_node_ids
+FROM read_pst_distribution_lists('test/unittest.pst')
+----
+2097412	33026	Cat Support Group	[2097412, 2097380]
+
+# Test distribution list one-off members
+query I
+select unnest(one_off_members) member from read_pst_distribution_lists('test/unittest.pst') order by member['display_name'] asc;
+----
+{'display_name': 'Hopper Cat (hopper@intellekt.fyi)', 'address_type': SMTP, 'email_address': hopper@intellekt.fyi}
+{'display_name': 'Linus Cat (linus@intellekt.fyi)', 'address_type': SMTP, 'email_address': linus@intellekt.fyi}
 
 # Test read_pst_appointments - should have 1 appointment
 query I

@@ -16,11 +16,11 @@ explain select count(*) from read_pst_messages('test/unittest.pst');
 ----
 physical_plan	<REGEX>:.*COLUMN_DATA_SCAN.*
 
-# Test read_pst_notes plan level filter - should have 6 notes (IPM.Note)
+# Test read_pst_notes plan level filter - should have 5 notes (IPM.Note)
 query II
 EXPLAIN SELECT * FROM read_pst_notes('test/unittest.pst')
 ----
-physical_plan	<REGEX>:.*6 rows.*
+physical_plan	<REGEX>:.*5 rows.*
 
 # Test read_pst_contacts plan level filter - should have 2 contacts
 query II
