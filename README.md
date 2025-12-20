@@ -1,7 +1,7 @@
 <img width="100" alt="logo" src="https://github.com/user-attachments/assets/279fa223-f786-4e95-9d8f-1d0d9276afce" />
 
 # duckdb-pst
-A DuckDB extension for reading [Microsoft PST files](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546) with rich schemas for common MAPI types, built on Microsoft's official PST SDK. Query emails, contacts, calendar appointments, and tasks from PST archives using plain SQL—directly from local disk or any DuckDB-supported object storage provider (S3, Azure, GCS, etc.). Use it to analyze PST data in-place, import to DuckDB tables (or any other supported federated write provider, e.g. Parquet or Delta Table).
+A DuckDB extension for reading [Microsoft PST files](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546) with rich schemas for common MAPI types, built on Microsoft's official PST SDK. Query emails, contacts, appointments (and others). Use it to analyze PST data in-place (locally, or on object storage), import to DuckDB tables, or export to Parquet.
 
 ## Getting Started
 
@@ -59,10 +59,10 @@ Run Time (s): real 0.012 user 0.015968 sys 0.015498
 
 PSTs have many database-like properties, allowing us to leverage advanced DuckDB features to enable performant reads:
 
-- **Query pushdown**: projection, statistics, and filter pushdown for efficient scans
+- **Query pushdown**: projection and statistics pushdown
 - **Concurrent planning**: parallel partition planning for directories with many PST files
 - **Late materialization**: filter on virtual columns before expanding full projections (WIP)
-- **Progress tracking**: built-in progress API for monitoring large scans
+- **Progress tracking**: implements progress API for monitoring large scans
 
 ## Usage
 
@@ -72,15 +72,16 @@ The extension provides specialized table functions for different MAPI message ty
 
 **Type-specific functions** (`read_pst_contacts`, `read_pst_appointments`, etc.) - Filter messages by type during query planning. These inherit all base `IPM.Note` fields plus additional fields for their specific type. Planning is slower due to filtering (unfortunately, this requires a comparison of the `PR_MESSAGE_CLASS` string), but you get a richer schema and reduced result set. 
 
-| Table Function            | MAPI Message Class  | Description                                              |
-|---------------------------|---------------------|----------------------------------------------------------|
-| `read_pst_folders`        | `*`                 | Folders                                                  |
-| `read_pst_messages`       | `*`                 | All messages, with base `IPM.Note` email projection      |
-| `read_pst_notes`          | `IPM.Note`          | (Filtered) only `IPM.Note` (and unimplemented types)     |
-| `read_pst_contacts`       | `IPM.Contact`       | (Filtered) only contacts with contact-specific fields    |
-| `read_pst_appointments`   | `IPM.Appointment`   | (Filtered) only calendar appointments and meetings       |
-| `read_pst_sticky_notes`   | `IPM.StickyNote`    | (Filtered) only sticky note items                        |
-| `read_pst_tasks`          | `IPM.Task`          | (Filtered) task items with task-specific fields          |
+| Table Function                | MAPI Message Class  | Description                                              |
+|-------------------------------|---------------------|----------------------------------------------------------|
+| `read_pst_folders`            | `*`                 | Folders                                                  |
+| `read_pst_messages`           | `*`                 | All messages, with base `IPM.Note` email projection      |
+| `read_pst_notes`              | `IPM.Note`          | (Filtered) only `IPM.Note` (and unimplemented types)     |
+| `read_pst_contacts`           | `IPM.Contact`       | (Filtered) only contacts with contact-specific fields    |
+| `read_pst_distribution_lists` | `IPM.DistList`      | (Filtered) distribution lists with member information    |
+| `read_pst_appointments`       | `IPM.Appointment`   | (Filtered) only calendar appointments and meetings       |
+| `read_pst_sticky_notes`       | `IPM.StickyNote`    | (Filtered) only sticky note items                        |
+| `read_pst_tasks`              | `IPM.Task`          | (Filtered) task items with task-specific fields          |
 
 ## Schemas
 
@@ -91,6 +92,7 @@ All table functions return PST metadata fields. Message-based functions inherit 
 - [Folders](#folders-read_pst_folders) - Folder-specific fields
 - [Base Messages](#base-messages-read_pst_messages-read_pst_notes) - Core message fields (emails, notes)
 - [Contacts](#contacts-read_pst_contacts) - Contact-specific fields
+- [Distribution Lists](#distribution-lists-read_pst_distribution_lists) - Distribution list fields
 - [Appointments](#appointments-read_pst_appointments) - Calendar/meeting fields
 - [Sticky Notes](#sticky-notes-read_pst_sticky_notes) - Sticky note fields
 - [Tasks](#tasks-read_pst_tasks) - Task management fields
@@ -234,6 +236,16 @@ Includes PST metadata + base message fields + contact-specific fields:
 | `disclose_recipients`          | `BOOLEAN`      | Disclose recipients           |
 
 </details>
+
+### Distribution Lists (`read_pst_distribution_lists`)
+
+Includes PST metadata + base message fields + distribution list-specific fields:
+
+| Field               | Type                                                                      | Description                                                     |
+|---------------------|---------------------------------------------------------------------------|----------------------------------------------------------------|
+| `member_node_ids`   | `LIST(UINTEGER)`                                                          | Node IDs of contact members within the PST                     |
+| `one_off_members`   | `LIST(STRUCT(display_name VARCHAR, address_type VARCHAR, email_address VARCHAR))` | External email addresses not in contacts (one-off recipients)  |
+
 
 ### Appointments (`read_pst_appointments`)
 
