@@ -935,7 +935,7 @@ void into_row(PSTReadLocalState &local_state, duckdb::DataChunk &output, Item &i
 		switch (schema_col) {
 		case static_cast<int>(schema::PSTProjection::node_id):
 		case schema::PST_VCOL_NODE_ID:
-			output.SetValue(col_idx, row_number, Value::UINTEGER(item.node.get_id()));
+			output.SetValue(col_idx, row_number, Value::UINTEGER(item.nid));
 			break;
 		case static_cast<int>(schema::PSTProjection::parent_node_id):
 			output.SetValue(col_idx, row_number,
