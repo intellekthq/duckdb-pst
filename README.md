@@ -5,7 +5,7 @@ A DuckDB extension for reading [Microsoft PST files](https://learn.microsoft.com
 
 ## Getting Started
 
-Quickly count all messages or folders in a directory full of PSTs (this one has 167 files):
+Quickly count all messages or folders in a directory full of PSTs (167 files, 72.1 GiB):
 
 ```sql
 memory D select count(*) from read_pst_messages('enron/*.pst');
@@ -54,6 +54,21 @@ memory D select * from read_pst_messages('enron/*.pst', read_limit=5);
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 Run Time (s): real 0.012 user 0.015968 sys 0.015498
 ```
+
+Have a remote URI for your PST? No problem:
+
+```sql
+select given_name, surname from read_pst_contacts('https://github.com/intellekthq/duckdb-pst/raw/refs/heads/main/test/unittest.pst');
+┌────────────┬─────────┐
+│ given_name │ surname │
+│  varchar   │ varchar │
+├────────────┼─────────┤
+│ Hopper     │ Cat     │
+│ Linus      │ Cat     │
+└────────────┴─────────┘
+```
+
+See the [Query Cookbook](#query-cookbook) for more examples of common PST analysis tasks.
 
 ## Performance Features
 
@@ -354,6 +369,82 @@ Used in the `one_off_members` field of distribution lists. Each one-off member c
 | `display_name`   | `VARCHAR`  | Display name (e.g., "John Doe (john@example.com)")       |
 | `address_type`   | `VARCHAR`  | Address type (typically "SMTP")                          |
 | `email_address`  | `VARCHAR`  | Email address                                            |
+
+## Query Cookbook
+
+These queries represent common use-cases for traversing PST files or doing basic e-discovery.
+
+**Table of Contents:**
+- [Select directory tree from a given folder](#select-directory-tree-from-a-given-folder)
+- [Find all parent directories of a given folder](#find-all-parent-directories-of-a-given-folder)
+
+##### Select directory tree from a given folder
+
+This recursively crawls all children of folder with NID 32802.
+
+```sql
+with recursive dirtree as (
+  select display_name, node_id, parent_node_id
+  from read_pst_folders('test/unittest.pst')
+  where node_id = 32802
+  union
+  select f.display_name, f.node_id, f.parent_node_id
+  from read_pst_folders('test/unittest.pst') f  
+  inner join dirtree d on d.node_id = f.parent_node_id
+)
+
+select * from dirtree;
+
+┌──────────────────────────────┬─────────┬────────────────┐
+│         display_name         │ node_id │ parent_node_id │
+│           varchar            │ uint32  │     uint32     │
+├──────────────────────────────┼─────────┼────────────────┤
+│ Top of Outlook data file     │   32802 │            290 │
+│ Deleted Items                │   32866 │          32802 │
+│ Calendar                     │   32994 │          32802 │
+│ Sent Items                   │   32962 │          32802 │
+│ Outbox                       │   32930 │          32802 │
+│ Inbox                        │   32898 │          32802 │
+│ Quick Step Settings          │   33250 │          32802 │
+│ Conversation Action Settings │   33218 │          32802 │
+│ RSS Feeds                    │   33186 │          32802 │
+│ Drafts                       │   33154 │          32802 │
+│ Tasks                        │   33122 │          32802 │
+│ Notes                        │   33090 │          32802 │
+│ Journal                      │   33058 │          32802 │
+│ Contacts                     │   33026 │          32802 │
+├──────────────────────────────┴─────────┴────────────────┤
+│ 14 rows                                       3 columns │
+└─────────────────────────────────────────────────────────┘
+```
+
+##### Find all parent directories of a given folder
+
+This traverses the directory tree upward, to the root of the PST file.
+
+```sql
+with recursive parent_tree as (
+  select display_name, node_id, parent_node_id
+  from read_pst_folders('test/unittest.pst')
+  where node_id = 33058
+  union
+  select f.display_name, f.node_id, f.parent_node_id
+  from read_pst_folders('test/unittest.pst') f
+  inner join parent_tree d on d.parent_node_id = f.node_id
+)
+
+select * from parent_tree;
+
+┌──────────────────────────┬─────────┬────────────────┐
+│       display_name       │ node_id │ parent_node_id │
+│         varchar          │ uint32  │     uint32     │
+├──────────────────────────┼─────────┼────────────────┤
+│ Journal                  │   33058 │          32802 │
+│ Top of Outlook data file │   32802 │            290 │
+│                          │     290 │            290 │
+└──────────────────────────┴─────────┴────────────────┘
+```
+
 
 ## Building
 
