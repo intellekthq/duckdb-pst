@@ -106,6 +106,14 @@ enum class AttachmentProjection { ATTACHMENT_CHILDREN(SCHEMA_CHILD_NAME) };
 
 static const auto ATTACHMENT_SCHEMA = LogicalType::STRUCT({ATTACHMENT_CHILDREN(SCHEMA_CHILD)});
 
+/* One-off recipient attributes */
+#define ONE_OFF_RECIPIENT_CHILDREN(LT)                                                                                 \
+	LT(display_name, LogicalType::VARCHAR)                                                                             \
+	LT(address_type, LogicalType::VARCHAR)                                                                             \
+	LT(email_address, LogicalType::VARCHAR)
+
+static const auto ONE_OFF_RECIPIENT_SCHEMA = LogicalType::STRUCT({ONE_OFF_RECIPIENT_CHILDREN(SCHEMA_CHILD)});
+
 /* Per-file PST attributes */
 
 #define PST_CHILDREN(LT)                                                                                               \
@@ -305,8 +313,9 @@ static const auto TASK_SCHEMA =
     LogicalType::STRUCT({PST_CHILDREN(SCHEMA_CHILD) NOTE_CHILDREN(SCHEMA_CHILD) TASK_CHILDREN(SCHEMA_CHILD)});
 
 /* Distribution list schema */
-
-#define DLIST_CHILDREN(LT) LT(member_node_ids, LogicalType::LIST(LogicalType::UINTEGER))
+#define DLIST_CHILDREN(LT)                                                                                             \
+	LT(member_node_ids, LogicalType::LIST(LogicalType::UINTEGER))                                                      \
+	LT(one_off_members, LogicalType::LIST(ONE_OFF_RECIPIENT_SCHEMA))
 
 enum class DistributionListProjetion {
 	PST_CHILDREN(SCHEMA_CHILD_NAME) NOTE_CHILDREN(SCHEMA_CHILD_NAME) DLIST_CHILDREN(SCHEMA_CHILD_NAME)

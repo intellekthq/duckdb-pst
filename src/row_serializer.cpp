@@ -859,6 +859,34 @@ void set_output_column(PSTReadLocalState &local_state, duckdb::DataChunk &output
 
 	prop_id named_prop_id = 0;
 	switch (schema_col) {
+	case static_cast<int>(schema::DistributionListProjetion::one_off_members): {
+		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_address, PidLidDistributionListOneOffMembers);
+
+		if (!prop_bag.prop_exists(named_prop_id)) {
+			output.SetValue(column_index, row_number, Value(nullptr));
+			break;
+		}
+
+		auto entry_ids = prop_bag.read_prop_array<std::vector<pstsdk::byte>>(named_prop_id);
+		vector<Value> oneoff_recipients;
+		for (auto &entry : entry_ids) {
+			auto header = reinterpret_cast<pstsdk::recipient_oneoff_entry_id *>(&entry.data()[0]);
+			if (!pstsdk::guid_eq(header->provider_uid, pstsdk::provider_uid_recipient_oneoff)) {
+				throw InvalidInputException(
+				    "Unknown DistributionList entry ProviderUID, only One-Off entries are supported for this property");
+			}
+
+			vector<Value> one_off_recipient;
+			for (auto &s : header->read_strings()) {
+				one_off_recipient.emplace_back(Value(s));
+			}
+
+			oneoff_recipients.emplace_back(Value::STRUCT(schema::ONE_OFF_RECIPIENT_SCHEMA, one_off_recipient));
+		}
+
+		output.SetValue(column_index, row_number, Value::LIST(schema::ONE_OFF_RECIPIENT_SCHEMA, oneoff_recipients));
+		break;
+	}
 	case static_cast<int>(schema::DistributionListProjetion::member_node_ids): {
 		named_prop_id = local_state.pst->lookup_prop_id(pstsdk::ps_address, PidLidDistributionListMembers);
 
