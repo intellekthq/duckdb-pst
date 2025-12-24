@@ -484,4 +484,4 @@ GEN=ninja make debug
 
 Built with love, by [Intellekt](https://intellekt.fyi).
 
-This extension is built on top of the [microsoft-pst-sdk](https://github.com/terrymah/microsoft-pst-sdk) by [Terry Mahaffey](https://github.com/terrymah), Microsoft's official C++ SDK for reading PST files.
+This extension is built on top of the [microsoft-pst-sdk](https://github.com/enrondata/microsoft-pst-sdk) by [Terry Mahaffey](https://github.com/terrymah), Microsoft's official C++ SDK for reading PST files.
