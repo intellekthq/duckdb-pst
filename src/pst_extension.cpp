@@ -31,7 +31,7 @@ static void LoadInternal(ExtensionLoader &loader) {
   proto.table_scan_progress = duckpst::PSTReadProgress;
   proto.dynamic_to_string = duckpst::PSTDynamicToString;
 
-  proto.late_materialization = true;
+  proto.late_materialization = false;
   proto.projection_pushdown = true;
   proto.named_parameters = duckpst::NAMED_PARAMETERS;
 

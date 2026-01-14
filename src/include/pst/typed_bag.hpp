@@ -3,8 +3,11 @@
 #include "pstsdk/ltp/propbag.h"
 #include "pstsdk/mapitags.h"
 #include "pstsdk/pst/pst.h"
+#include "pstsdk/util/primitives.h"
+#include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <tuple>
 
 namespace intellekt::duckpst::pst {
 
@@ -17,12 +20,86 @@ namespace intellekt::duckpst::pst {
   LT(Task)
 
 #define MESSAGE_CLASS_ENUM(name) name,
+enum MessageClass { MESSAGE_CLASSES(MESSAGE_CLASS_ENUM) };
+
+auto static constexpr IPM_APPOINTMENT_A = "IPM.Appointment";
+auto static constexpr IPM_APPOINTMENT_A_SIZE = sizeof("IPM.Appointment") - 1;
+auto static constexpr IPM_CONTACT_A = "IPM.Contact";
+auto static constexpr IPM_CONTACT_A_SIZE = sizeof("IPM.Contact") - 1;
+auto static constexpr IPM_DISTLIST_A = "IPM.DistList";
+auto static constexpr IPM_DISTLIST_A_SIZE = sizeof("IPM.DistList") - 1;
+auto static constexpr IPM_NOTE_A = "IPM.Note";
+auto static constexpr IPM_NOTE_A_SIZE = sizeof("IPM.Note") - 1;
+auto static constexpr IPM_STICKYNOTE_A = "IPM.StickyNote";
+auto static constexpr IPM_STICKYNOTE_A_SIZE = sizeof("IPM.StickyNote") - 1;
+auto static constexpr IPM_TASK_A = "IPM.Task";
+auto static constexpr IPM_TASK_A_SIZE = sizeof("IPM.Task") - 1;
+
+auto static constexpr IPM_APPOINTMENT_W = u"IPM.Appointment";
+auto static constexpr IPM_APPOINTMENT_W_SIZE =
+    sizeof(u"IPM.Appointment") - sizeof(char16_t);
+auto static constexpr IPM_CONTACT_W = u"IPM.Contact";
+auto static constexpr IPM_CONTACT_W_SIZE =
+    sizeof(u"IPM.Contact") - sizeof(char16_t);
+auto static constexpr IPM_DISTLIST_W = u"IPM.DistList";
+auto static constexpr IPM_DISTLIST_W_SIZE =
+    sizeof(u"IPM.DistList") - sizeof(char16_t);
+auto static constexpr IPM_NOTE_W = u"IPM.Note";
+auto static constexpr IPM_NOTE_W_SIZE = sizeof(u"IPM.Note") - sizeof(char16_t);
+auto static constexpr IPM_STICKYNOTE_W = u"IPM.StickyNote";
+auto static constexpr IPM_STICKYNOTE_W_SIZE =
+    sizeof(u"IPM.StickyNote") - sizeof(char16_t);
+auto static constexpr IPM_TASK_W = u"IPM.Task";
+auto static constexpr IPM_TASK_W_SIZE = sizeof(u"IPM.Task") - sizeof(char16_t);
+
+auto static constexpr IPF_APPOINTMENT_A = "IPF.Appointment";
+auto static constexpr IPF_APPOINTMENT_A_SIZE = sizeof("IPF.Appointment");
+auto static constexpr IPF_CONTACT_A = "IPF.Contact";
+auto static constexpr IPF_CONTACT_A_SIZE = sizeof("IPF.Contact");
+auto static constexpr IPF_DISTLIST_A = "IPF.DistList";
+auto static constexpr IPF_DISTLIST_A_SIZE = sizeof("IPF.DistList");
+auto static constexpr IPF_NOTE_A = "IPF.Note";
+auto static constexpr IPF_NOTE_A_SIZE = sizeof("IPF.Note");
+auto static constexpr IPF_STICKYNOTE_A = "IPF.StickyNote";
+auto static constexpr IPF_STICKYNOTE_A_SIZE = sizeof("IPF.StickyNote");
+auto static constexpr IPF_TASK_A = "IPF.Task";
+auto static constexpr IPF_TASK_A_SIZE = sizeof("IPF.Task");
+
+auto static constexpr IPF_APPOINTMENT_W = u"IPF.Appointment";
+auto static constexpr IPF_APPOINTMENT_W_SIZE = sizeof(u"IPF.Appointment");
+auto static constexpr IPF_CONTACT_W = u"IPF.Contact";
+auto static constexpr IPF_CONTACT_W_SIZE = sizeof(u"IPF.Contact");
+auto static constexpr IPF_DISTLIST_W = u"IPF.DistList";
+auto static constexpr IPF_DISTLIST_W_SIZE = sizeof(u"IPF.DistList");
+auto static constexpr IPF_NOTE_W = u"IPF.Note";
+auto static constexpr IPF_NOTE_W_SIZE = sizeof(u"IPF.Note");
+auto static constexpr IPF_STICKYNOTE_W = u"IPF.StickyNote";
+auto static constexpr IPF_STICKYNOTE_W_SIZE = sizeof(u"IPF.StickyNote");
+auto static constexpr IPF_TASK_W = u"IPF.Task";
+auto static constexpr IPF_TASK_W_SIZE = sizeof(u"IPF.Task");
+
+#define MESSAGE_CLASS_NAME_A(name) "IPM." #name
+#define MESSAGE_CLASS_NAME_W(name) u"IPM." #name
+
+#define MESSAGE_CLASS_CONST_ENTRY_A(name)                                      \
+  std::tuple<const char *, size_t, MessageClass>{                              \
+      MESSAGE_CLASS_NAME_A(name), sizeof(MESSAGE_CLASS_NAME_A(name)), name},
+#define MESSAGE_CLASS_CONST_ENTRY_W(name)                                      \
+  std::tuple<const char16_t *, size_t, MessageClass>{                          \
+      MESSAGE_CLASS_NAME_W(name), sizeof(MESSAGE_CLASS_NAME_W(name)), name},
+
+inline const std::vector<std::tuple<const char *, size_t, MessageClass>>
+    MESSAGE_CLASS_CONST_ENTRIES_A = {
+        MESSAGE_CLASSES(MESSAGE_CLASS_CONST_ENTRY_A)};
+
+inline const std::vector<std::tuple<const char16_t *, size_t, MessageClass>>
+    MESSAGE_CLASS_CONST_ENTRIES_W = {
+        MESSAGE_CLASSES(MESSAGE_CLASS_CONST_ENTRY_W)};
+
 #define CONTAINER_CLASS_NAME(name) "IPF." #name,
 #define MESSAGE_CLASS_NAME(name) "IPM." #name,
 #define MESSAGE_CLASS_ENTRY(name) {MESSAGE_CLASS_NAME(name) name},
 #define CONTAINER_CLASS_ENTRY(name) {CONTAINER_CLASS_NAME(name) name},
-
-enum MessageClass { MESSAGE_CLASSES(MESSAGE_CLASS_ENUM) };
 
 inline const std::vector<const char *> MESSAGE_CLASS_NAMES = {
     MESSAGE_CLASSES(MESSAGE_CLASS_NAME)};
@@ -90,16 +167,29 @@ inline MessageClass container_class(const pstsdk::pst &pst,
 inline MessageClass message_class(const pstsdk::pst &pst,
                                   const pstsdk::node_id &nid) {
   auto bag = pstsdk::property_bag(pst.get_db().get()->lookup_node(nid));
-  auto maybe_msg_class =
-      bag.read_prop_if_exists<std::string>(PR_MESSAGE_CLASS_A);
 
   auto klass = BASE_CLASS;
 
-  if (maybe_msg_class) {
-    auto maybe_klass = MESSAGE_CLASS_MAP.find(*maybe_msg_class);
-    if (maybe_klass != MESSAGE_CLASS_MAP.end()) {
-      auto &[_name, k] = *maybe_klass;
-      klass = k;
+  if (!bag.prop_exists(PR_MESSAGE_CLASS_A))
+    return klass;
+
+  auto klass_type = bag.get_prop_type(PR_MESSAGE_CLASS_A);
+  auto klass_size = bag.size(PR_MESSAGE_CLASS_A);
+  auto klass_buf = bag.get_value_variable(PR_MESSAGE_CLASS_A);
+
+  if (klass_type == pstsdk::prop_type_string) {
+    for (auto &[s, sz, klass] : MESSAGE_CLASS_CONST_ENTRIES_A) {
+      if (sz != klass_size)
+        continue;
+      if (!memcmp(s, klass_buf.data(), klass_size))
+        return klass;
+    }
+  } else if (klass_type == pstsdk::prop_type_wstring) {
+    for (auto &[s, sz, klass] : MESSAGE_CLASS_CONST_ENTRIES_W) {
+      if (sz != klass_size)
+        continue;
+      if (!memcmp(s, klass_buf.data(), klass_size))
+        return klass;
     }
   }
 
