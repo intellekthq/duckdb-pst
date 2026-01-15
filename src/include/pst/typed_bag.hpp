@@ -22,62 +22,6 @@ namespace intellekt::duckpst::pst {
 #define MESSAGE_CLASS_ENUM(name) name,
 enum MessageClass { MESSAGE_CLASSES(MESSAGE_CLASS_ENUM) };
 
-auto static constexpr IPM_APPOINTMENT_A = "IPM.Appointment";
-auto static constexpr IPM_APPOINTMENT_A_SIZE = sizeof("IPM.Appointment") - 1;
-auto static constexpr IPM_CONTACT_A = "IPM.Contact";
-auto static constexpr IPM_CONTACT_A_SIZE = sizeof("IPM.Contact") - 1;
-auto static constexpr IPM_DISTLIST_A = "IPM.DistList";
-auto static constexpr IPM_DISTLIST_A_SIZE = sizeof("IPM.DistList") - 1;
-auto static constexpr IPM_NOTE_A = "IPM.Note";
-auto static constexpr IPM_NOTE_A_SIZE = sizeof("IPM.Note") - 1;
-auto static constexpr IPM_STICKYNOTE_A = "IPM.StickyNote";
-auto static constexpr IPM_STICKYNOTE_A_SIZE = sizeof("IPM.StickyNote") - 1;
-auto static constexpr IPM_TASK_A = "IPM.Task";
-auto static constexpr IPM_TASK_A_SIZE = sizeof("IPM.Task") - 1;
-
-auto static constexpr IPM_APPOINTMENT_W = u"IPM.Appointment";
-auto static constexpr IPM_APPOINTMENT_W_SIZE =
-    sizeof(u"IPM.Appointment") - sizeof(char16_t);
-auto static constexpr IPM_CONTACT_W = u"IPM.Contact";
-auto static constexpr IPM_CONTACT_W_SIZE =
-    sizeof(u"IPM.Contact") - sizeof(char16_t);
-auto static constexpr IPM_DISTLIST_W = u"IPM.DistList";
-auto static constexpr IPM_DISTLIST_W_SIZE =
-    sizeof(u"IPM.DistList") - sizeof(char16_t);
-auto static constexpr IPM_NOTE_W = u"IPM.Note";
-auto static constexpr IPM_NOTE_W_SIZE = sizeof(u"IPM.Note") - sizeof(char16_t);
-auto static constexpr IPM_STICKYNOTE_W = u"IPM.StickyNote";
-auto static constexpr IPM_STICKYNOTE_W_SIZE =
-    sizeof(u"IPM.StickyNote") - sizeof(char16_t);
-auto static constexpr IPM_TASK_W = u"IPM.Task";
-auto static constexpr IPM_TASK_W_SIZE = sizeof(u"IPM.Task") - sizeof(char16_t);
-
-auto static constexpr IPF_APPOINTMENT_A = "IPF.Appointment";
-auto static constexpr IPF_APPOINTMENT_A_SIZE = sizeof("IPF.Appointment");
-auto static constexpr IPF_CONTACT_A = "IPF.Contact";
-auto static constexpr IPF_CONTACT_A_SIZE = sizeof("IPF.Contact");
-auto static constexpr IPF_DISTLIST_A = "IPF.DistList";
-auto static constexpr IPF_DISTLIST_A_SIZE = sizeof("IPF.DistList");
-auto static constexpr IPF_NOTE_A = "IPF.Note";
-auto static constexpr IPF_NOTE_A_SIZE = sizeof("IPF.Note");
-auto static constexpr IPF_STICKYNOTE_A = "IPF.StickyNote";
-auto static constexpr IPF_STICKYNOTE_A_SIZE = sizeof("IPF.StickyNote");
-auto static constexpr IPF_TASK_A = "IPF.Task";
-auto static constexpr IPF_TASK_A_SIZE = sizeof("IPF.Task");
-
-auto static constexpr IPF_APPOINTMENT_W = u"IPF.Appointment";
-auto static constexpr IPF_APPOINTMENT_W_SIZE = sizeof(u"IPF.Appointment");
-auto static constexpr IPF_CONTACT_W = u"IPF.Contact";
-auto static constexpr IPF_CONTACT_W_SIZE = sizeof(u"IPF.Contact");
-auto static constexpr IPF_DISTLIST_W = u"IPF.DistList";
-auto static constexpr IPF_DISTLIST_W_SIZE = sizeof(u"IPF.DistList");
-auto static constexpr IPF_NOTE_W = u"IPF.Note";
-auto static constexpr IPF_NOTE_W_SIZE = sizeof(u"IPF.Note");
-auto static constexpr IPF_STICKYNOTE_W = u"IPF.StickyNote";
-auto static constexpr IPF_STICKYNOTE_W_SIZE = sizeof(u"IPF.StickyNote");
-auto static constexpr IPF_TASK_W = u"IPF.Task";
-auto static constexpr IPF_TASK_W_SIZE = sizeof(u"IPF.Task");
-
 #define MESSAGE_CLASS_NAME_A(name) "IPM." #name
 #define MESSAGE_CLASS_NAME_W(name) u"IPM." #name
 
