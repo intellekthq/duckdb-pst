@@ -25,7 +25,8 @@ enum MessageClass { MESSAGE_CLASSES(MESSAGE_CLASS_ENUM) };
 #define MESSAGE_CLASS_NAME_A(name) "IPM." #name
 #define MESSAGE_CLASS_NAME_W(name) u"IPM." #name
 
-// TODO: No null terminators for this string in `unittest.pst` (as written by Windows Outlook)
+// TODO: No null terminators for this string in `unittest.pst` (as written by
+// Windows Outlook)
 #define MESSAGE_CLASS_CONST_ENTRY_A(name)                                      \
   std::tuple<const char *, size_t, MessageClass>{                              \
       MESSAGE_CLASS_NAME_A(name), sizeof(MESSAGE_CLASS_NAME_A(name)) - 1,      \

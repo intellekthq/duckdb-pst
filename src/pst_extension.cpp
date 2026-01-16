@@ -23,15 +23,14 @@ static void LoadInternal(ExtensionLoader &loader) {
   proto.get_partition_info = duckpst::PSTPartitionInfo;
   proto.get_partition_stats = duckpst::PSTPartitionStats;
 
-  // For late materialization support, however we can't prune partitions
-  // without `filter_pushdown=true` and handling row-by-row filters ourselves
   proto.get_virtual_columns = duckpst::PSTVirtualColumns;
   proto.get_row_id_columns = duckpst::PSTRowIDColumns;
+  proto.pushdown_complex_filter = duckpst::PSTHandleComplexFilters;
+  proto.late_materialization = true;
 
   proto.table_scan_progress = duckpst::PSTReadProgress;
   proto.dynamic_to_string = duckpst::PSTDynamicToString;
 
-  proto.late_materialization = false;
   proto.projection_pushdown = true;
   proto.named_parameters = duckpst::NAMED_PARAMETERS;
 

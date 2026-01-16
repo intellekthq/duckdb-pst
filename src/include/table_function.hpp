@@ -102,6 +102,8 @@ struct PSTInputPartition {
                     const PartitionStatistics stats,
                     const vector<node_id> &&nodes);
   PSTInputPartition(const PSTInputPartition &other_partition);
+
+  set<node_id> prune(idx_t schema_col, unique_ptr<TableFilter> &filter);
 };
 
 struct PSTReadTableFunctionData : public TableFunctionData {
@@ -202,6 +204,14 @@ virtual_column_map_t PSTVirtualColumns(ClientContext &ctx,
 
 vector<column_t> PSTRowIDColumns(ClientContext &ctx,
                                  optional_ptr<FunctionData> bind_data);
+
+void PSTApplyVirtualColumnFilters(idx_t schema_col,
+                                  unique_ptr<TableFilter> &filter,
+                                  FunctionData *bind_data);
+
+void PSTHandleComplexFilters(ClientContext &context, LogicalGet &get,
+                             FunctionData *bind_data,
+                             vector<unique_ptr<Expression>> &filters);
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input,
                      DataChunk &output);
