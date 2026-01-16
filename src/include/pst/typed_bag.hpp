@@ -25,12 +25,15 @@ enum MessageClass { MESSAGE_CLASSES(MESSAGE_CLASS_ENUM) };
 #define MESSAGE_CLASS_NAME_A(name) "IPM." #name
 #define MESSAGE_CLASS_NAME_W(name) u"IPM." #name
 
+// TODO: No null terminators for this string in `unittest.pst` (as written by Windows Outlook)
 #define MESSAGE_CLASS_CONST_ENTRY_A(name)                                      \
   std::tuple<const char *, size_t, MessageClass>{                              \
-      MESSAGE_CLASS_NAME_A(name), sizeof(MESSAGE_CLASS_NAME_A(name)), name},
+      MESSAGE_CLASS_NAME_A(name), sizeof(MESSAGE_CLASS_NAME_A(name)) - 1,      \
+      name},
 #define MESSAGE_CLASS_CONST_ENTRY_W(name)                                      \
   std::tuple<const char16_t *, size_t, MessageClass>{                          \
-      MESSAGE_CLASS_NAME_W(name), sizeof(MESSAGE_CLASS_NAME_W(name)), name},
+      MESSAGE_CLASS_NAME_W(name),                                              \
+      sizeof(MESSAGE_CLASS_NAME_W(name)) - sizeof(char16_t), name},
 
 inline const std::vector<std::tuple<const char *, size_t, MessageClass>>
     MESSAGE_CLASS_CONST_ENTRIES_A = {
@@ -50,8 +53,6 @@ inline const std::vector<const char *> MESSAGE_CLASS_NAMES = {
 inline const std::vector<const char *> CONTAINER_CLASS_NAMES = {
     MESSAGE_CLASSES(MESSAGE_CLASS_NAME)};
 
-inline const std::unordered_map<std::string, MessageClass> MESSAGE_CLASS_MAP = {
-    MESSAGE_CLASSES(MESSAGE_CLASS_ENTRY)};
 inline const std::unordered_map<std::string, MessageClass> CONTAINER_CLASS_MAP =
     {MESSAGE_CLASSES(CONTAINER_CLASS_ENTRY)};
 
