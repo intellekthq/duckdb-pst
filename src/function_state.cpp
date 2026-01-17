@@ -27,7 +27,7 @@ PSTReadGlobalState::PSTReadGlobalState(
   set<OpenFileInfo> unique_files_read;
 
   auto sync_partitions = partitions.synchronize();
-  for (auto part : bind_data.partitions.get()) {
+  for (auto partition : bind_data.partitions.get()) {
 
     if (input.filters) {
       for (auto &[column_id, f] : input.filters->filters) {
@@ -35,8 +35,8 @@ PSTReadGlobalState::PSTReadGlobalState(
         switch (schema_col) {
         case schema::PST_VCOL_PARTITION_INDEX:
         case schema::PST_VCOL_NODE_ID: {
-          auto new_nodes = part.prune(schema_col, f);
-          part.nodes = {new_nodes.begin(), new_nodes.end()};
+          auto new_nodes = partition.prune(schema_col, f);
+          partition.nodes = {new_nodes.begin(), new_nodes.end()};
           break;
         }
         default:
@@ -45,15 +45,15 @@ PSTReadGlobalState::PSTReadGlobalState(
       }
     }
 
-    part.stats.count = part.nodes.size();
+    partition.stats.count = partition.nodes.size();
 
-    if (!part.nodes.empty()) {
-      part.stats.row_start = part.nodes[0];
+    if (!partition.nodes.empty()) {
+      partition.stats.row_start = partition.nodes[0];
       nonempty_partition_count += 1;
-      unique_files_read.emplace(part.file);
+      unique_files_read.emplace(partition.file);
     }
 
-    sync_partitions->push(part);
+    sync_partitions->push(partition);
   }
 
   files_read = unique_files_read.size();
