@@ -1,6 +1,7 @@
 #include "table_function.hpp"
 #include "duckdb/common/enums/expression_type.hpp"
 #include "duckdb/common/unique_ptr.hpp"
+#include "duckdb/execution/partition_info.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/filter/conjunction_filter.hpp"
@@ -51,13 +52,15 @@ PSTInputPartition::PSTInputPartition(const idx_t partition_index,
                                      PartitionStatistics stats,
                                      const vector<node_id> &&nodes)
     : partition_index(partition_index), pst(pst), file(file), mode(mode),
-      stats(std::move(stats)), nodes(nodes) {}
+      stats(std::move(stats)), nodes(nodes),
+      partition_data(OperatorPartitionData(partition_index)) {}
 
 PSTInputPartition::PSTInputPartition(const PSTInputPartition &other_partition)
     : partition_index(other_partition.partition_index),
       pst(other_partition.pst), file(other_partition.file),
       mode(other_partition.mode), stats(other_partition.stats),
-      nodes(other_partition.nodes){};
+      nodes(other_partition.nodes),
+      partition_data(other_partition.partition_data){};
 
 set<node_id> PSTInputPartition::prune(idx_t schema_col,
                                       unique_ptr<TableFilter> &filter) {
@@ -71,48 +74,59 @@ set<node_id> PSTInputPartition::prune(idx_t schema_col,
   }
   case duckdb::TableFilterType::CONSTANT_COMPARISON: {
     auto &constant_filter = filter->Cast<ConstantFilter>();
-    if (schema_col == schema::PST_VCOL_NODE_ID) {
+    switch (schema_col) {
+    case schema::PST_VCOL_NODE_ID:
       for (auto &nid : nodes) {
         if (constant_filter.Compare(Value::UINTEGER(nid))) {
           filtered.insert(nid);
         }
       }
+      break;
+    case schema::PST_VCOL_PARTITION_INDEX:
+      if (constant_filter.Compare(Value::UBIGINT(partition_index))) {
+        filtered.insert(nodes.begin(), nodes.end());
+      }
+      break;
     }
     break;
   }
-  // case duckdb::TableFilterType::CONJUNCTION_AND: {
-  //   auto and_filter = filter->Cast<ConjunctionAndFilter>();
-  //   auto left = prune(schema_col, *and_filter.child_filters[0]);
-  //   auto right = prune(schema_col, *and_filter.child_filters[1]);
+  case duckdb::TableFilterType::CONJUNCTION_AND: {
+    auto &and_filter = filter->Cast<ConjunctionAndFilter>();
+    auto left = prune(schema_col, and_filter.child_filters[0]);
+    auto right = prune(schema_col, and_filter.child_filters[1]);
 
-  //   std::set_intersection(
-  //     left.begin(), left.end(),
-  //     right.begin(), right.end(),
-  //     std::inserter(filtered, filtered.begin())
-  //   );
-  // }
-  // case duckdb::TableFilterType::CONJUNCTION_OR: {
-  //   auto or_filter = filter->Cast<ConjunctionOrFilter>();
-  //   auto left = prune(schema_col, *or_filter.child_filters[0]);
-  //   auto right = prune(schema_col, *or_filter.child_filters[1]);
+    std::set_intersection(left.begin(), left.end(), right.begin(), right.end(),
+                          std::inserter(filtered, filtered.begin()));
+    break;
+  }
+  case duckdb::TableFilterType::CONJUNCTION_OR: {
+    auto &or_filter = filter->Cast<ConjunctionOrFilter>();
+    auto left = prune(schema_col, or_filter.child_filters[0]);
+    auto right = prune(schema_col, or_filter.child_filters[1]);
 
-  //   std::set_union(
-  //     left.begin(), left.end(),
-  //     right.begin(), right.end(),
-  //     std::inserter(filtered, filtered.begin())
-  //   );
-  // }
+    std::set_union(left.begin(), left.end(), right.begin(), right.end(),
+                   std::inserter(filtered, filtered.begin()));
+    break;
+  }
   case duckdb::TableFilterType::IN_FILTER: {
     auto &in_filter = filter->Cast<InFilter>();
     set<Value> in_values(in_filter.values.begin(), in_filter.values.end());
 
-    if (schema_col == schema::PST_VCOL_NODE_ID) {
+    switch (schema_col) {
+    case schema::PST_VCOL_NODE_ID:
       for (auto &nid : nodes) {
         if (in_values.find(Value::UINTEGER(nid)) != in_values.end()) {
           filtered.insert(nid);
         }
       }
+      break;
+    case schema::PST_VCOL_PARTITION_INDEX:
+      if (in_values.find(Value::BIGINT(partition_index)) == in_values.end()) {
+        filtered.insert(nodes.begin(), nodes.end());
+      }
+      break;
     }
+
     break;
   }
   default:
@@ -334,9 +348,26 @@ unique_ptr<GlobalTableFunctionState>
 PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
   DUCKDB_LOG_DEBUG(ctx, "init_global [PSTReadInitGlobal]");
 
-  auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-  auto global_state =
-      make_uniq<PSTReadGlobalState>(bind_data, input.column_ids);
+  // TODO: const_cast is probably here for a reason
+  auto bind_data = const_cast<FunctionData *>(&*input.bind_data);
+
+  if (input.filters) {
+    for (auto &[c, f] : input.filters->filters) {
+      auto schema_col = input.column_ids[c];
+      switch (schema_col) {
+      case schema::PST_VCOL_PARTITION_INDEX:
+      case schema::PST_VCOL_NODE_ID: {
+        PSTApplyVirtualColumnFilters(ctx, schema_col, f, bind_data);
+        break;
+      }
+      default:
+        break;
+      }
+    }
+  }
+
+  auto &pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
+  auto global_state = make_uniq<PSTReadGlobalState>(pst_data, input.column_ids);
   return global_state;
 }
 
@@ -433,7 +464,7 @@ vector<PartitionStatistics> PSTPartitionStats(ClientContext &ctx,
 // TODO
 TablePartitionInfo PSTPartitionInfo(ClientContext &ctx,
                                     TableFunctionPartitionInput &input) {
-  return TablePartitionInfo::SINGLE_VALUE_PARTITIONS;
+  return TablePartitionInfo::NOT_PARTITIONED;
 }
 
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
@@ -482,28 +513,35 @@ vector<column_t> PSTRowIDColumns(ClientContext &ctx,
   return {schema::PST_VCOL_NODE_ID, schema::PST_VCOL_PARTITION_INDEX};
 }
 
-void PSTApplyVirtualColumnFilters(idx_t schema_col,
+void PSTApplyVirtualColumnFilters(ClientContext &ctx, idx_t schema_col,
                                   unique_ptr<TableFilter> &filter,
                                   FunctionData *bind_data) {
+
+  DUCKDB_LOG_DEBUG(ctx, "[PSTApplyVirtualColumnFilters]: %llu", schema_col);
   auto &pst_data = bind_data->Cast<PSTReadTableFunctionData>();
 
   auto sync_partitions = pst_data.partitions.synchronize();
 
   for (idx_t i = 0; i < sync_partitions->size(); ++i) {
     auto &p = sync_partitions->at(i);
+    // TODO: API nit, prune can also update the stats
     auto new_nodes = p.prune(schema_col, filter);
+
     p.nodes = {new_nodes.begin(), new_nodes.end()};
+
+    p.stats.count = p.nodes.size();
+    if (!p.nodes.empty())
+      p.stats.row_start = p.nodes[0];
   }
 }
 
-void PSTHandleComplexFilters(ClientContext &context, LogicalGet &get,
+void PSTHandleComplexFilters(ClientContext &ctx, LogicalGet &get,
                              FunctionData *bind_data,
                              vector<unique_ptr<Expression>> &filters) {
-  DUCKDB_LOG_DEBUG(context,
-                   "pushdown_complex_filter [PSTHandleComplexFilters]");
+  DUCKDB_LOG_DEBUG(ctx, "pushdown_complex_filter [PSTHandleComplexFilters]");
 
   // TableFilterSet is easier to work with
-  FilterCombiner combiner(context);
+  FilterCombiner combiner(ctx);
 
   // Determine if any of the filters are for PST virtual columns
   for (int i = filters.size() - 1; i >= 0; i--) {
@@ -527,6 +565,7 @@ void PSTHandleComplexFilters(ClientContext &context, LogicalGet &get,
     // We found a PST vcol filter, add it to the filter combiner
     if (pst_virtual_column) {
       combiner.AddFilter(filter->Copy());
+      // erase = "we handle it"
       filters.erase_at(i);
     }
   }
@@ -535,10 +574,8 @@ void PSTHandleComplexFilters(ClientContext &context, LogicalGet &get,
   auto filter_set =
       combiner.GenerateTableScanFilters(get.GetColumnIds(), pushdown_results);
   for (auto &[schema_col, f] : filter_set.filters) {
-    PSTApplyVirtualColumnFilters(schema_col, f, bind_data);
+    PSTApplyVirtualColumnFilters(ctx, schema_col, f, bind_data);
   }
-
-  printf("fpd\n");
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input,

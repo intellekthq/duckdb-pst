@@ -26,6 +26,7 @@ static void LoadInternal(ExtensionLoader &loader) {
   proto.get_virtual_columns = duckpst::PSTVirtualColumns;
   proto.get_row_id_columns = duckpst::PSTRowIDColumns;
   proto.pushdown_complex_filter = duckpst::PSTHandleComplexFilters;
+  proto.filter_pushdown = true;
   proto.late_materialization = true;
 
   proto.table_scan_progress = duckpst::PSTReadProgress;
