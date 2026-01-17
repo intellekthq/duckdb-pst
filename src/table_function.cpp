@@ -6,11 +6,9 @@
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/filter/conjunction_filter.hpp"
 #include "duckdb/planner/filter/constant_filter.hpp"
-#include "duckdb/planner/filter/dynamic_filter.hpp"
 #include "duckdb/planner/filter/optional_filter.hpp"
 #include "duckdb/planner/filter/in_filter.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
-#include "duckdb/optimizer/filter_combiner.hpp"
 #include "duckdb/planner/table_filter.hpp"
 #include "function_state.hpp"
 #include "pst/typed_bag.hpp"
@@ -63,7 +61,7 @@ PSTInputPartition::PSTInputPartition(const PSTInputPartition &other_partition)
       partition_data(other_partition.partition_data){};
 
 set<node_id> PSTInputPartition::prune(idx_t schema_col,
-                                      unique_ptr<TableFilter> &filter) {
+                                      const unique_ptr<TableFilter> &filter) {
   set<node_id> filtered;
 
   switch (filter->filter_type) {
@@ -348,26 +346,9 @@ unique_ptr<GlobalTableFunctionState>
 PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
   DUCKDB_LOG_DEBUG(ctx, "init_global [PSTReadInitGlobal]");
 
-  // TODO: const_cast is probably here for a reason
-  auto bind_data = const_cast<FunctionData *>(&*input.bind_data);
-
-  if (input.filters) {
-    for (auto &[c, f] : input.filters->filters) {
-      auto schema_col = input.column_ids[c];
-      switch (schema_col) {
-      case schema::PST_VCOL_PARTITION_INDEX:
-      case schema::PST_VCOL_NODE_ID: {
-        PSTApplyVirtualColumnFilters(ctx, schema_col, f, bind_data);
-        break;
-      }
-      default:
-        break;
-      }
-    }
-  }
-
   auto &pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-  auto global_state = make_uniq<PSTReadGlobalState>(pst_data, input.column_ids);
+  auto global_state = make_uniq<PSTReadGlobalState>(pst_data, input);
+
   return global_state;
 }
 
@@ -478,12 +459,13 @@ double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
 InsertionOrderPreservingMap<string>
 PSTDynamicToString(duckdb::TableFunctionDynamicToStringInput &input) {
   auto &pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
+  auto &global_state = input.global_state->Cast<PSTReadGlobalState>();
 
   InsertionOrderPreservingMap<string> meta;
 
-  meta.insert(make_pair("Files read", std::to_string(pst_data.files.size())));
+  meta.insert(make_pair("Files read", std::to_string(global_state.files_read)));
   meta.insert(make_pair("Partitions read",
-                        std::to_string(pst_data.partitions->size())));
+                        std::to_string(global_state.nonempty_partition_count)));
   meta.insert(
       make_pair("Partition size", std::to_string(pst_data.partition_size())));
 
@@ -513,35 +495,10 @@ vector<column_t> PSTRowIDColumns(ClientContext &ctx,
   return {schema::PST_VCOL_NODE_ID, schema::PST_VCOL_PARTITION_INDEX};
 }
 
-void PSTApplyVirtualColumnFilters(ClientContext &ctx, idx_t schema_col,
-                                  unique_ptr<TableFilter> &filter,
-                                  FunctionData *bind_data) {
-
-  DUCKDB_LOG_DEBUG(ctx, "[PSTApplyVirtualColumnFilters]: %llu", schema_col);
-  auto &pst_data = bind_data->Cast<PSTReadTableFunctionData>();
-
-  auto sync_partitions = pst_data.partitions.synchronize();
-
-  for (idx_t i = 0; i < sync_partitions->size(); ++i) {
-    auto &p = sync_partitions->at(i);
-    // TODO: API nit, prune can also update the stats
-    auto new_nodes = p.prune(schema_col, filter);
-
-    p.nodes = {new_nodes.begin(), new_nodes.end()};
-
-    p.stats.count = p.nodes.size();
-    if (!p.nodes.empty())
-      p.stats.row_start = p.nodes[0];
-  }
-}
-
 void PSTHandleComplexFilters(ClientContext &ctx, LogicalGet &get,
                              FunctionData *bind_data,
                              vector<unique_ptr<Expression>> &filters) {
   DUCKDB_LOG_DEBUG(ctx, "pushdown_complex_filter [PSTHandleComplexFilters]");
-
-  // TableFilterSet is easier to work with
-  FilterCombiner combiner(ctx);
 
   // Determine if any of the filters are for PST virtual columns
   for (int i = filters.size() - 1; i >= 0; i--) {
@@ -562,19 +519,10 @@ void PSTHandleComplexFilters(ClientContext &ctx, LogicalGet &get,
           }
         });
 
-    // We found a PST vcol filter, add it to the filter combiner
+    // We found a PST virtual column, erase it to tell DuckDB we're handling it
     if (pst_virtual_column) {
-      combiner.AddFilter(filter->Copy());
-      // erase = "we handle it"
       filters.erase_at(i);
     }
-  }
-
-  vector<FilterPushdownResult> pushdown_results;
-  auto filter_set =
-      combiner.GenerateTableScanFilters(get.GetColumnIds(), pushdown_results);
-  for (auto &[schema_col, f] : filter_set.filters) {
-    PSTApplyVirtualColumnFilters(ctx, schema_col, f, bind_data);
   }
 }
 

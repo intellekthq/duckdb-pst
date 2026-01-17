@@ -1,5 +1,6 @@
 #include "function_state.hpp"
-#include "pst/duckdb_filesystem.hpp"
+
+#include "duckdb/function/table_function.hpp"
 #include "pst/typed_bag.hpp"
 #include "row_serializer.hpp"
 #include "table_function.hpp"
@@ -17,14 +18,45 @@ using namespace pstsdk;
 
 // PSTReadGlobalState
 PSTReadGlobalState::PSTReadGlobalState(
-    const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids)
-    : bind_data(bind_data), column_ids(std::move(column_ids)) {
+    const PSTReadTableFunctionData &bind_data,
+    const TableFunctionInitInput &input)
+    : bind_data(bind_data), column_ids(input.column_ids) {
+  nodes_processed = 0;
+  nonempty_partition_count = 0;
+
+  set<OpenFileInfo> unique_files_read;
+
   auto sync_partitions = partitions.synchronize();
-  for (auto &part : bind_data.partitions.get()) {
+  for (auto part : bind_data.partitions.get()) {
+
+    if (input.filters) {
+      for (auto &[column_id, f] : input.filters->filters) {
+        auto schema_col = input.column_ids[column_id];
+        switch (schema_col) {
+        case schema::PST_VCOL_PARTITION_INDEX:
+        case schema::PST_VCOL_NODE_ID: {
+          auto new_nodes = part.prune(schema_col, f);
+          part.nodes = {new_nodes.begin(), new_nodes.end()};
+          break;
+        }
+        default:
+          break;
+        }
+      }
+    }
+
+    part.stats.count = part.nodes.size();
+
+    if (!part.nodes.empty()) {
+      part.stats.row_start = part.nodes[0];
+      nonempty_partition_count += 1;
+      unique_files_read.emplace(part.file);
+    }
+
     sync_partitions->push(part);
   }
 
-  nodes_processed = 0;
+  files_read = unique_files_read.size();
 }
 
 std::optional<PSTInputPartition> PSTReadGlobalState::take_partition() {
