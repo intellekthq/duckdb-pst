@@ -24,7 +24,8 @@ namespace intellekt::duckpst {
         if (!plan) return {};
 
         switch (plan->type) {
-            case duckdb::LogicalOperatorType::LOGICAL_PROJECTION: {
+            case duckdb::LogicalOperatorType::LOGICAL_PROJECTION:
+            case duckdb::LogicalOperatorType::LOGICAL_LIMIT: {
                 return FindPSTOperator(plan->children[0]);
             }
             case duckdb::LogicalOperatorType::LOGICAL_GET: {
@@ -164,6 +165,8 @@ namespace intellekt::duckpst {
 
         if (projection_rewrites.empty()) return;
         UpdateProjectionBindings(plan, projection_rewrites);
+
+        printf("%s", plan->ToString().data());
     }
 
     PSTFilterOptimizer::PSTFilterOptimizer() {

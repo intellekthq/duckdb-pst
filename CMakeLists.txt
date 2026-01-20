@@ -29,6 +29,7 @@ include_directories(microsoft-pst-sdk)
 
 set(
   EXTENSION_SOURCES
+  src/filter_optimizer.cpp
   src/function_state.cpp
   src/table_function.cpp
   src/pst_extension.cpp
@@ -43,6 +44,12 @@ find_package(Boost REQUIRED COMPONENTS thread)
 if(Boost_FOUND)
   list(APPEND DUCKPST_INCLUDE ${Boost_INCLUDE_DIRS})
   list(APPEND DUCKPST_LINK Boost::thread)
+endif()
+
+# Must link GNU iconv on macOS to avoid decoder bug with UTF-16LE
+if(APPLE)
+  set(Iconv_INCLUDE_DIR "/opt/homebrew/opt/libiconv/include")
+  set(Iconv_LIBRARY "/opt/homebrew/opt/libiconv/lib/libiconv.dylib")
 endif()
 
 find_package(Iconv REQUIRED)
