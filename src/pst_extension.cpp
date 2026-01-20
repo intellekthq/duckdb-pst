@@ -46,10 +46,10 @@ static void LoadInternal(ExtensionLoader &loader) {
   }
 }
 
-void PstExtension::Load(ExtensionLoader &loader) { 
+void PstExtension::Load(ExtensionLoader &loader) {
   auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
   config.optimizer_extensions.emplace_back(duckpst::PSTFilterOptimizer());
-  LoadInternal(loader); 
+  LoadInternal(loader);
 }
 
 std::string PstExtension::Name() { return "pst"; }
