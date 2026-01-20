@@ -495,35 +495,23 @@ vector<column_t> PSTRowIDColumns(ClientContext &ctx,
   return {schema::PST_VCOL_NODE_ID, schema::PST_VCOL_PARTITION_INDEX};
 }
 
-void PSTHandleComplexFilters(ClientContext &ctx, LogicalGet &get,
-                             FunctionData *bind_data,
-                             vector<unique_ptr<Expression>> &filters) {
-  DUCKDB_LOG_DEBUG(ctx, "pushdown_complex_filter [PSTHandleComplexFilters]");
+bool PSTPushdownFilterExpression(ClientContext &ctx, const LogicalGet &get,
+                                 Expression &expr) {
+  bool is_pst_virtual_column = false;
+  ExpressionIterator::VisitExpressionClass(
+      expr, ExpressionClass::BOUND_COLUMN_REF, [&](const Expression &expr) {
+        auto &bound_column_ref_expr = expr.Cast<BoundColumnRefExpression>();
+        auto schema_col =
+            get.GetColumnIds()[bound_column_ref_expr.binding.column_index];
 
-  // Determine if any of the filters are for PST virtual columns
-  for (int i = filters.size() - 1; i >= 0; i--) {
-    auto &filter = filters[i];
-    std::optional<ColumnIndex> pst_virtual_column;
+        if ((schema_col.GetPrimaryIndex() ==
+             schema::PST_VCOL_PARTITION_INDEX) ||
+            (schema_col.GetPrimaryIndex() == schema::PST_VCOL_NODE_ID)) {
+          is_pst_virtual_column = true;
+        }
+      });
 
-    ExpressionIterator::VisitExpressionClassMutable(
-        filter, ExpressionClass::BOUND_COLUMN_REF,
-        [&](unique_ptr<Expression> &expr) {
-          auto &bound_column_ref_expr = expr->Cast<BoundColumnRefExpression>();
-          auto schema_col =
-              get.GetColumnIds()[bound_column_ref_expr.binding.column_index];
-
-          if ((schema_col.GetPrimaryIndex() ==
-               schema::PST_VCOL_PARTITION_INDEX) ||
-              (schema_col.GetPrimaryIndex() == schema::PST_VCOL_NODE_ID)) {
-            pst_virtual_column.emplace(schema_col);
-          }
-        });
-
-    // We found a PST virtual column, erase it to tell DuckDB we're handling it
-    if (pst_virtual_column) {
-      filters.erase_at(i);
-    }
-  }
+  return is_pst_virtual_column;
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input,

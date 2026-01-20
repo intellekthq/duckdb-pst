@@ -1,5 +1,3 @@
-#include "duckdb/main/config.hpp"
-#include "filter_optimizer.hpp"
 #if DUCDKB_BUILD_LOADABLE_EXTENSION
 #define DUCKDB_EXTENSION_MAIN
 #endif
@@ -27,7 +25,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 
   proto.get_virtual_columns = duckpst::PSTVirtualColumns;
   proto.get_row_id_columns = duckpst::PSTRowIDColumns;
-  proto.pushdown_complex_filter = duckpst::PSTHandleComplexFilters;
+  proto.pushdown_expression = duckpst::PSTPushdownFilterExpression;
   proto.filter_pushdown = true;
   proto.late_materialization = true;
 
@@ -46,11 +44,7 @@ static void LoadInternal(ExtensionLoader &loader) {
   }
 }
 
-void PstExtension::Load(ExtensionLoader &loader) {
-  auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
-  config.optimizer_extensions.emplace_back(duckpst::PSTFilterOptimizer());
-  LoadInternal(loader);
-}
+void PstExtension::Load(ExtensionLoader &loader) { LoadInternal(loader); }
 
 std::string PstExtension::Name() { return "pst"; }
 

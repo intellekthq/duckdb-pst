@@ -206,9 +206,8 @@ virtual_column_map_t PSTVirtualColumns(ClientContext &ctx,
 vector<column_t> PSTRowIDColumns(ClientContext &ctx,
                                  optional_ptr<FunctionData> bind_data);
 
-void PSTHandleComplexFilters(ClientContext &ctx, LogicalGet &get,
-                             FunctionData *bind_data,
-                             vector<unique_ptr<Expression>> &filters);
+bool PSTPushdownFilterExpression(ClientContext &ctx, const LogicalGet &get,
+                                 Expression &expr);
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input,
                      DataChunk &output);
