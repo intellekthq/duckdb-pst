@@ -119,7 +119,7 @@ set<node_id> PSTInputPartition::prune(idx_t schema_col,
       }
       break;
     case schema::PST_VCOL_PARTITION_INDEX:
-      if (in_values.find(Value::BIGINT(partition_index)) == in_values.end()) {
+      if (in_values.find(Value::BIGINT(partition_index)) != in_values.end()) {
         filtered.insert(nodes.begin(), nodes.end());
       }
       break;
