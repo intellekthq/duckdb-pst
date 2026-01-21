@@ -29,6 +29,7 @@ include_directories(microsoft-pst-sdk)
 
 set(
   EXTENSION_SOURCES
+  src/filter_optimizer.cpp
   src/function_state.cpp
   src/table_function.cpp
   src/pst_extension.cpp
