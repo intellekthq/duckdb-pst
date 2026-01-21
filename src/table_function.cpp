@@ -497,21 +497,21 @@ vector<column_t> PSTRowIDColumns(ClientContext &ctx,
 
 bool PSTPushdownFilterExpression(ClientContext &ctx, const LogicalGet &get,
                                  Expression &expr) {
-  bool is_pst_virtual_column = false;
+  set<hash_t> col_bindings;
+
   ExpressionIterator::VisitExpressionClass(
       expr, ExpressionClass::BOUND_COLUMN_REF, [&](const Expression &expr) {
         auto &bound_column_ref_expr = expr.Cast<BoundColumnRefExpression>();
         auto schema_col =
             get.GetColumnIds()[bound_column_ref_expr.binding.column_index];
 
-        if ((schema_col.GetPrimaryIndex() ==
-             schema::PST_VCOL_PARTITION_INDEX) ||
-            (schema_col.GetPrimaryIndex() == schema::PST_VCOL_NODE_ID)) {
-          is_pst_virtual_column = true;
+        if (schema::PST_VCOLS.find(schema_col.GetPrimaryIndex()) !=
+            schema::PST_VCOLS.end()) {
+          col_bindings.emplace(bound_column_ref_expr.Hash());
         }
       });
 
-  return is_pst_virtual_column;
+  return col_bindings.size() == 1;
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input,

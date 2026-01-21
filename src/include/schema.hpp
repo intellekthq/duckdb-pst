@@ -16,6 +16,9 @@ inline constexpr auto PST_VCOL_PARTITION_INDEX_TYPE = LogicalType::UBIGINT;
 inline constexpr auto PST_VCOL_NODE_ID = DUCKDB_VIRTUAL_COLUMN_START + 1;
 inline constexpr auto PST_VCOL_NODE_ID_TYPE = LogicalType::UINTEGER;
 
+static inline set<column_t> PST_VCOLS = {PST_VCOL_PARTITION_INDEX,
+                                         PST_VCOL_NODE_ID};
+
 /* Enum schemas */
 inline LogicalType RecipientTypeSchema() {
   Vector values(LogicalType::VARCHAR, 3);
