@@ -23,6 +23,7 @@ PSTReadGlobalState::PSTReadGlobalState(
     : bind_data(bind_data), column_ids(input.column_ids) {
   nodes_processed = 0;
   nonempty_partition_count = 0;
+  partitions_processed = 0;
 
   set<OpenFileInfo> unique_files_read;
 
@@ -47,11 +48,13 @@ PSTReadGlobalState::PSTReadGlobalState(
 
     partition.stats.count = partition.nodes.size();
 
-    if (!partition.nodes.empty()) {
-      partition.stats.row_start = partition.nodes[0];
-      nonempty_partition_count += 1;
-      unique_files_read.emplace(partition.file);
+    if (partition.nodes.empty()) {
+      continue;
     }
+
+    partition.stats.row_start = partition.nodes[0];
+    nonempty_partition_count += 1;
+    unique_files_read.emplace(partition.file);
 
     sync_partitions->push(partition);
   }
@@ -66,8 +69,9 @@ std::optional<PSTInputPartition> PSTReadGlobalState::take_partition() {
 
   auto part = sync_partitions->front();
 
-  // TODO: it would be more honest if this happened after emission
+  // TODO: update after emit?
   nodes_processed += part.stats.count;
+  partitions_processed += 1;
 
   sync_partitions->pop();
   return std::move(part);

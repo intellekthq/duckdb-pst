@@ -27,6 +27,7 @@ public:
   std::optional<PSTInputPartition> take_partition();
 
   idx_t nonempty_partition_count;
+  idx_t partitions_processed;
   idx_t nodes_processed;
   idx_t files_read;
 

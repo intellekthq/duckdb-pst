@@ -65,12 +65,12 @@ set<node_id> PSTInputPartition::prune(idx_t schema_col,
   set<node_id> filtered;
 
   switch (filter->filter_type) {
-  case duckdb::TableFilterType::OPTIONAL_FILTER: {
+  case TableFilterType::OPTIONAL_FILTER: {
     auto &optional_filter = filter->Cast<OptionalFilter>();
     filtered = prune(schema_col, optional_filter.child_filter);
     break;
   }
-  case duckdb::TableFilterType::CONSTANT_COMPARISON: {
+  case TableFilterType::CONSTANT_COMPARISON: {
     auto &constant_filter = filter->Cast<ConstantFilter>();
     switch (schema_col) {
     case schema::PST_VCOL_NODE_ID:
@@ -88,7 +88,7 @@ set<node_id> PSTInputPartition::prune(idx_t schema_col,
     }
     break;
   }
-  case duckdb::TableFilterType::CONJUNCTION_AND: {
+  case TableFilterType::CONJUNCTION_AND: {
     auto &and_filter = filter->Cast<ConjunctionAndFilter>();
     auto left = prune(schema_col, and_filter.child_filters[0]);
     auto right = prune(schema_col, and_filter.child_filters[1]);
@@ -97,7 +97,7 @@ set<node_id> PSTInputPartition::prune(idx_t schema_col,
                           std::inserter(filtered, filtered.begin()));
     break;
   }
-  case duckdb::TableFilterType::CONJUNCTION_OR: {
+  case TableFilterType::CONJUNCTION_OR: {
     auto &or_filter = filter->Cast<ConjunctionOrFilter>();
     auto left = prune(schema_col, or_filter.child_filters[0]);
     auto right = prune(schema_col, or_filter.child_filters[1]);
@@ -106,7 +106,7 @@ set<node_id> PSTInputPartition::prune(idx_t schema_col,
                    std::inserter(filtered, filtered.begin()));
     break;
   }
-  case duckdb::TableFilterType::IN_FILTER: {
+  case TableFilterType::IN_FILTER: {
     auto &in_filter = filter->Cast<InFilter>();
     set<Value> in_values(in_filter.values.begin(), in_filter.values.end());
 
@@ -451,9 +451,8 @@ TablePartitionInfo PSTPartitionInfo(ClientContext &ctx,
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
                        const GlobalTableFunctionState *global_state) {
   auto &pst_state = global_state->Cast<PSTReadGlobalState>();
-  auto cardinality =
-      PSTReadCardinality(context, bind_data)->estimated_cardinality;
-  return (100.0 * pst_state.nodes_processed) / std::max<idx_t>(cardinality, 1);
+  return (100.0 * pst_state.partitions_processed) /
+         std::max<idx_t>(pst_state.nonempty_partition_count, 1);
 }
 
 InsertionOrderPreservingMap<string>
@@ -495,8 +494,8 @@ vector<column_t> PSTRowIDColumns(ClientContext &ctx,
   return {schema::PST_VCOL_NODE_ID, schema::PST_VCOL_PARTITION_INDEX};
 }
 
-bool PSTPushdownFilterExpression(ClientContext &ctx, const LogicalGet &get,
-                                 Expression &expr) {
+bool PSTPushdownExpression(ClientContext &ctx, const LogicalGet &get,
+                           Expression &expr) {
   set<hash_t> col_bindings;
 
   ExpressionIterator::VisitExpressionClass(
