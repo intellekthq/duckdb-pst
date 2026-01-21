@@ -39,6 +39,7 @@
 #include <future>
 #include <iterator>
 #include <limits>
+#include <numeric>
 
 namespace intellekt::duckpst {
 using namespace duckdb;
@@ -90,20 +91,30 @@ set<node_id> PSTInputPartition::prune(idx_t schema_col,
   }
   case TableFilterType::CONJUNCTION_AND: {
     auto &and_filter = filter->Cast<ConjunctionAndFilter>();
-    auto left = prune(schema_col, and_filter.child_filters[0]);
-    auto right = prune(schema_col, and_filter.child_filters[1]);
+    filtered = prune(schema_col, and_filter.child_filters[0]);
 
-    std::set_intersection(left.begin(), left.end(), right.begin(), right.end(),
-                          std::inserter(filtered, filtered.begin()));
+    if (and_filter.child_filters.size() < 2)
+      break;
+
+    for (idx_t i = 1; i < and_filter.child_filters.size(); ++i) {
+      set<node_id> intersect;
+      auto pruned_child = prune(schema_col, and_filter.child_filters[i]);
+      std::set_intersection(filtered.begin(), filtered.end(),
+                            pruned_child.begin(), pruned_child.end(),
+                            std::inserter(intersect, intersect.begin()));
+      filtered = std::move(intersect);
+    }
+
     break;
   }
   case TableFilterType::CONJUNCTION_OR: {
     auto &or_filter = filter->Cast<ConjunctionOrFilter>();
-    auto left = prune(schema_col, or_filter.child_filters[0]);
-    auto right = prune(schema_col, or_filter.child_filters[1]);
 
-    std::set_union(left.begin(), left.end(), right.begin(), right.end(),
-                   std::inserter(filtered, filtered.begin()));
+    for (auto &child_filter : or_filter.child_filters) {
+      auto pruned_child = prune(schema_col, child_filter);
+      filtered.insert(pruned_child.begin(), pruned_child.end());
+    }
+
     break;
   }
   case TableFilterType::IN_FILTER: {
@@ -119,7 +130,7 @@ set<node_id> PSTInputPartition::prune(idx_t schema_col,
       }
       break;
     case schema::PST_VCOL_PARTITION_INDEX:
-      if (in_values.find(Value::BIGINT(partition_index)) != in_values.end()) {
+      if (in_values.find(Value::UBIGINT(partition_index)) != in_values.end()) {
         filtered.insert(nodes.begin(), nodes.end());
       }
       break;
