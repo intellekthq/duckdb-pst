@@ -91,7 +91,8 @@ void PSTFilterOptimizer::RewriteEligiblePSTFilters(
     auto non_vcol_filter =
         CreateLogicalFilter(non_vcol_filters, pst_logical_get);
 
-    non_vcol_filter->AddChild(pst_logical_get.Copy(input.context));
+    // Move the logical get. Do not call copy, it will rebind!
+    non_vcol_filter->AddChild(std::move(child));
 
     // Finally: do the rewrite
     plan->children[i] = std::move(non_vcol_filter);
