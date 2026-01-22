@@ -25,7 +25,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
 endif()
 
 include_directories(src/include)
-include_directories(microsoft-pst-sdk)
+include_directories(SYSTEM microsoft-pst-sdk)
 
 set(
   EXTENSION_SOURCES

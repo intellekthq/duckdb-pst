@@ -39,7 +39,6 @@
 #include <future>
 #include <iterator>
 #include <limits>
-#include <numeric>
 
 namespace intellekt::duckpst {
 using namespace duckdb;
@@ -202,6 +201,9 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx,
                                                     OpenFileInfo &file,
                                                     idx_t limit) {
   auto pst = make_shared_ptr<pstsdk::pst>(pst::dfile::open(ctx, file));
+
+  DUCKDB_LOG_DEBUG(ctx, "PSTReadTableFunctionData::plan_file_partitions: %s",
+                   file.path);
   vector<node_id> nodes;
 
   idx_t total_rows = 0;
@@ -314,7 +316,6 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx,
 void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
   if (!partitions->empty())
     return;
-  auto total_rows = 0;
   auto limit = this->read_limit();
 
   vector<std::future<void>> plan_tasks;
@@ -416,6 +417,7 @@ unique_ptr<FunctionData> PSTReadBind(ClientContext &ctx,
                                      TableFunctionBindInput &input,
                                      vector<LogicalType> &return_types,
                                      vector<string> &names) {
+  DUCKDB_LOG_DEBUG(ctx, "bind [PSTReadBind]");
   auto path = input.inputs[0].GetValue<string>();
   unique_ptr<PSTReadTableFunctionData> function_data =
       make_uniq<PSTReadTableFunctionData>(

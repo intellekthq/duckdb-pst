@@ -84,7 +84,7 @@ idx_t PSTReadGlobalState::MaxThreads() const {
 // PSTReadLocalState
 PSTReadLocalState::PSTReadLocalState(PSTReadGlobalState &global_state,
                                      ExecutionContext &ec)
-    : global_state(global_state), ec(ec) {
+    : ec(ec), global_state(global_state) {
   bind_partition();
   if (partition.has_value()) {
     current.emplace(partition->nodes.begin());
