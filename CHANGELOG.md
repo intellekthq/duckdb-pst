@@ -1,24 +1,45 @@
-# Change Log
-All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Changed
-- Add a new arity to `make-widget-async` to provide a different widget shape.
 
-## [0.1.1] - 2025-11-04
-### Changed
-- Documentation on how to make the widgets.
+- Finished implementing late materialization optimizer pushdown support
+  - Partition-level pruning via `PSTInputPartition::prune()` for both `__partition` and `__node_id` filters
+  - Filters applied during global state initialization for optimal performance
+  - Added `PSTFilterOptimizer` to prevent pushdown of non virtual column filters
+- Implemented table function `pushdown_expression` API
+- Optimized message class filtering using `memcmp` with predefined MAPI type constants instead of string comparisons
+- Updated cardinality statistics to reflect actual files and rows read (not just planned) during `EXPLAIN ANALYZE`
+- macOS: fixed iconv UTF-16LE decoding bug by explicitly linking GNU libiconv instead of system iconv
 
-### Removed
-- `make-widget-sync` - we're all async, all the time.
+## [0.0.1] - 2025-12-23
 
-### Fixed
-- Fixed widget maker to keep working when daylight savings switches over.
+- Initial release of duckdb-pst extension
+- Table functions for reading PST files:
+  - `read_pst_folders`
+  - `read_pst_messages`
+  - `read_pst_notes`
+  - `read_pst_contacts`
+  - `read_pst_appointments`
+  - `read_pst_sticky_notes`
+  - `read_pst_tasks`
+  - `read_pst_distribution_lists`
+- Planning features:
+  - Parallel table scanning
+  - Partition-based reads using PST NDB node batching
+  - Column pruning via projection pushdown
+  - Statistics pushdown for efficient `COUNT(*)` queries
+  - Cardinality estimation based on partition statistics
+  - Concurrent partition planning for directories with many PST files
+- Object storage support/integration with DuckDB's `FileSystem` abstraction
 
-## 0.1.0 - 2025-11-04
-### Added
-- Files from the new template.
-- Widget maker public API - `make-widget-sync`.
+### Platform Support
+- Linux (x86_64, ARM64)
+- macOS (x86_64, ARM64)
+- Windows (x86_64)
 
-[Unreleased]: https://sourcehost.site/your-name/./compare/0.1.1...HEAD
-[0.1.1]: https://sourcehost.site/your-name/./compare/0.1.0...0.1.1
+[Unreleased]: https://github.com/intellekthq/duckdb-pst/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/intellekthq/duckdb-pst/releases/tag/v0.0.1
