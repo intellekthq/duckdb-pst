@@ -76,7 +76,7 @@ PSTs have many database-like properties, allowing us to leverage advanced DuckDB
 
 - **Query pushdown**: projection and statistics pushdown
 - **Concurrent planning**: parallel partition planning for directories with many PST files
-- **Late materialization**: filter on virtual columns before expanding full projections (WIP)
+- **Late materialization**: filter on virtual columns before expanding full projections ([example](#find-messages-matching-a-conversation-topic))
 - **Progress tracking**: implements progress API for monitoring large scans
 
 ## Usage
@@ -122,6 +122,7 @@ All table functions return PST metadata fields. Message-based functions inherit 
 - [Sticky Notes](#sticky-notes-read_pst_sticky_notes) - Sticky note fields
 - [Tasks](#tasks-read_pst_tasks) - Task management fields
 - [Struct Schemas](#struct-schemas) - Schemas for recipients, attachments, and one-off members
+- [Virtual Columns](#virtual-columns) - PST internal metadata for filtering and optimization
 
 ### Common PST Metadata (all functions)
 
@@ -391,13 +392,71 @@ Used in the `one_off_members` field of distribution lists. Each one-off member c
 
 [↑ Back to Schemas](#schemas)
 
+### Virtual Columns
+
+Virtual columns provide access to PST internal metadata without materializing them in the default projection. These columns are available in all table functions and are primarily used by the late materialization optimizer to cull scans. However, if you know the specific NIDs of one or more objects within a PST, you can use `__node_id` in a filter predicate to push down an efficient scan for only those objects.
+
+| Field              | Type       | Description                                                               |
+|--------------------|------------|---------------------------------------------------------------------------|
+| `__partition`      | `UBIGINT`  | Nondeterministic internal partition number assigned during query planning |
+| `__node_id`        | `UINTEGER` | Node ID within the PST (duplicate of the `node_id` metadata field)        |
+
+[↑ Back to Schemas](#schemas)
+
 ## Common Queries
 
 These queries represent common use-cases for traversing PST files or doing basic e-discovery.
 
 **Table of Contents:**
+- [Find messages matching a conversation topic](#find-messages-matching-a-conversation-topic)
 - [Select directory tree from a given folder](#select-directory-tree-from-a-given-folder)
 - [Find all parent directories of a given folder](#find-all-parent-directories-of-a-given-folder)
+
+##### Find messages matching a conversation topic
+
+This pushes down a late-materialized scan against a large directory of PST files (171 files, 77.4GiB):
+
+```sql
+select pst_name, conversation_topic, message_size, creation_time 
+from read_pst_messages('enron/*.pst')
+where conversation_topic LIKE '%EnronOnline%' order by creation_time asc limit 10;
+
+┌────────────────┬────────────────────────────────────────────────┬──────────────┬─────────────────────┐
+│    pst_name    │               conversation_topic               │ message_size │    creation_time    │
+│    varchar     │                    varchar                     │    uint64    │     timestamp_s     │
+├────────────────┼────────────────────────────────────────────────┼──────────────┼─────────────────────┤
+│ skilling-j_000 │ EnronOnline Executive Summary for May 15, 2001 │        26953 │ 2010-06-17 04:39:00 │
+│ skilling-j_000 │ EnronOnline - Dec 14 Mgt Report                │        10255 │ 2010-06-17 04:39:08 │
+│ skilling-j_000 │ EnronOnline - Dec 14 Mgt Report                │        10253 │ 2010-06-17 04:39:08 │
+│ rogers-b_000   │ EnronOnline Desk to Desk ID and Password       │         7266 │ 2010-06-17 04:39:23 │
+│ rogers-b_000   │ EnronOnline Desk to Desk ID and Password       │         8750 │ 2010-06-17 04:39:26 │
+│ jones-t_000    │ EnronOnline Discussion                         │        17672 │ 2010-06-17 04:39:32 │
+│ beck-s_000     │ Storing of data on EnronOnline                 │         6833 │ 2010-06-17 04:39:41 │
+│ jones-t_000    │ Design Agency for EnronOnline                  │         7442 │ 2010-06-17 04:40:16 │
+│ jones-t_000    │ Design Agency for EnronOnline                  │        11830 │ 2010-06-17 04:40:17 │
+│ jones-t_000    │ EnronOnline and Offline NDA Lists              │       387401 │ 2010-06-17 04:41:21 │
+├────────────────┴────────────────────────────────────────────────┴──────────────┴─────────────────────┤
+│ 10 rows                                                                                    4 columns │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+Run Time (s): real 12.695 user 22.185424 sys 7.577354
+```
+
+To trigger late materialization, a `LIMIT` clause must generally be present in your query. Limit, Top N, and sample plans are the only ones eligible for LM pushdown. To see whether or not a query will push down a late-materialized scan, use `EXPLAIN` and look for a `HASH_JOIN` operator with `READ_PST_*` scan children.
+```
+┌─────────────┴─────────────┐
+│         HASH_JOIN         │
+│    ────────────────────   │
+│      Join Type: SEMI      │
+│                           │
+│        Conditions:        ├──────────────┐
+│   __node_id = __node_id   │              │
+│ __partition = __partition │              │
+│                           │              │
+│          ~0 rows          │              │
+└─────────────┬─────────────┘              │
+```
+
+[↑ Back to Common Queries](#common-queries)
 
 ##### Select directory tree from a given folder
 
