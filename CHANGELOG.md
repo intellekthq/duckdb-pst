@@ -9,11 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Finished implementing late materialization optimizer pushdown support
   - Partition-level pruning via `PSTInputPartition::prune()` for both `__partition` and `__node_id` filters
   - Filters applied during global state initialization for optimal performance
-  - Added `PSTFilterOptimizer` to prevent pushdown of non virtual column filters
-- Implemented table function `pushdown_expression` API
+  - Added `PSTFilterOptimizer` to prevent pushdown of non virtual column filters and replace `TableFunction::pushdown_complex_filters`
+- Implemented table function `pushdown_expression` API / specified no arbitrary expression pushdown
 - Optimized message class filtering using `memcmp` with predefined MAPI type constants instead of string comparisons
 - Updated cardinality statistics to reflect actual files and rows read (not just planned) during `EXPLAIN ANALYZE`
 - macOS: fixed iconv UTF-16LE decoding bug by explicitly linking GNU libiconv instead of system iconv
+- Added `planning_concurrency` table function parameter
 
 ## [0.0.1] - 2025-12-23
 
