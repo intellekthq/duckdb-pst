@@ -35,6 +35,7 @@
 #include "pstsdk/pst/folder.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <exception>
 #include <future>
 #include <iterator>
@@ -138,6 +139,7 @@ set<node_id> PSTInputPartition::prune(idx_t schema_col,
     break;
   }
   default:
+    filtered = {nodes.begin(), nodes.end()};
     break;
   }
 
@@ -185,6 +187,11 @@ const bool PSTReadTableFunctionData::read_attachment_body() const {
 
 const idx_t PSTReadTableFunctionData::read_limit() const {
   return parameter_or_default("read_limit", std::numeric_limits<idx_t>().max());
+}
+
+const uint32_t PSTReadTableFunctionData::planning_concurrency() const {
+  return parameter_or_default("planning_concurrency",
+                              std::numeric_limits<uint32_t>().max());
 }
 
 void PSTReadTableFunctionData::bind_table_function_output_schema(
@@ -317,23 +324,37 @@ void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
   if (!partitions->empty())
     return;
   auto limit = this->read_limit();
+  auto concurrency = this->planning_concurrency();
 
-  vector<std::future<void>> plan_tasks;
+  // vector<OpenFileInfo> files = this->files;
+  vector<std::tuple<idx_t, std::future<void>>> plan_tasks;
 
-  for (auto &file : files) {
-    plan_tasks.emplace_back(std::async(
-        std::launch::async, &PSTReadTableFunctionData::plan_file_partitions,
-        this, std::ref(ctx), std::ref(file), limit));
-  }
+  auto drain = [&]() {
+    for (idx_t i = 0; i < plan_tasks.size(); ++i) {
+      auto &[file_idx, task] = plan_tasks[i];
+      try {
+        task.get();
+      } catch (std::exception &e) {
+        DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s",
+                         files[file_idx].path, e.what());
+      }
+    }
+
+    plan_tasks.clear();
+  };
 
   for (idx_t i = 0; i < files.size(); ++i) {
-    try {
-      plan_tasks[i].get();
-    } catch (std::exception &e) {
-      DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", files[i].path,
-                       e.what());
+    if (plan_tasks.size() >= concurrency) {
+      drain();
     }
+
+    plan_tasks.emplace_back(std::tuple{
+        i, std::async(std::launch::async,
+                      &PSTReadTableFunctionData::plan_file_partitions, this,
+                      std::ref(ctx), std::ref(files[i]), limit)});
   }
+
+  drain();
 
   DUCKDB_LOG_INFO(ctx, "Planned %d partitions (%d files)", partitions->size(),
                   files.size());
@@ -509,21 +530,8 @@ vector<column_t> PSTRowIDColumns(ClientContext &ctx,
 
 bool PSTPushdownExpression(ClientContext &ctx, const LogicalGet &get,
                            Expression &expr) {
-  set<hash_t> col_bindings;
-
-  ExpressionIterator::VisitExpressionClass(
-      expr, ExpressionClass::BOUND_COLUMN_REF, [&](const Expression &expr) {
-        auto &bound_column_ref_expr = expr.Cast<BoundColumnRefExpression>();
-        auto schema_col =
-            get.GetColumnIds()[bound_column_ref_expr.binding.column_index];
-
-        if (schema::PST_VCOLS.find(schema_col.GetPrimaryIndex()) !=
-            schema::PST_VCOLS.end()) {
-          col_bindings.emplace(bound_column_ref_expr.Hash());
-        }
-      });
-
-  return col_bindings.size() == 1;
+  // We do not handle arbitrary expression filters
+  return false;
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input,

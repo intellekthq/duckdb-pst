@@ -26,14 +26,15 @@ static void LoadInternal(ExtensionLoader &loader) {
 
   proto.get_virtual_columns = duckpst::PSTVirtualColumns;
   proto.get_row_id_columns = duckpst::PSTRowIDColumns;
-  proto.pushdown_expression = duckpst::PSTPushdownExpression;
-  proto.filter_pushdown = true;
-  proto.late_materialization = true;
 
   proto.table_scan_progress = duckpst::PSTReadProgress;
   proto.dynamic_to_string = duckpst::PSTDynamicToString;
 
+  proto.filter_pushdown = true;
   proto.projection_pushdown = true;
+  proto.late_materialization = true;
+  proto.pushdown_expression = duckpst::PSTPushdownExpression;
+
   proto.named_parameters = duckpst::NAMED_PARAMETERS;
 
   for (auto pair : duckpst::FUNCTIONS) {

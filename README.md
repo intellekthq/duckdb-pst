@@ -5,18 +5,18 @@ A DuckDB extension for reading [Microsoft PST files](https://learn.microsoft.com
 
 ## Getting Started
 
-Quickly count all messages or folders in a directory full of PSTs (167 files, 72.1 GiB):
+Quickly count all messages or folders in a directory full of PSTs (171 files, 77.4 GiB):
 
 ```sql
-memory D select count(*) from read_pst_messages('enron/*.pst');
+D select count(*) from read_pst_messages('enron/*.pst');
 ┌────────────────┐
 │  count_star()  │
 │     int64      │
 ├────────────────┤
-│    1167830     │
-│ (1.17 million) │
+│    1227193     │
+│ (1.23 million) │
 └────────────────┘
-Run Time (s): real 0.564 user 0.381726 sys 0.701447
+Run Time (s): real 0.534 user 0.466194 sys 0.650549
 ```
 
 What kinds of objects are in this PST?
