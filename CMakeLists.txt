@@ -46,12 +46,9 @@ if(Boost_FOUND)
   list(APPEND DUCKPST_LINK Boost::thread)
 endif()
 
-# Must link GNU iconv on macOS to avoid decoder bug with UTF-16LE
-if(APPLE)
-  set(Iconv_INCLUDE_DIR "/opt/homebrew/opt/libiconv/include")
-  set(Iconv_LIBRARY "/opt/homebrew/opt/libiconv/lib/libiconv.dylib")
-endif()
-
+# GNU iconv is required on macOS to avoid decoder bug with UTF-16LE.
+# The custom vcpkg overlay port in extension-ci-tools/vcpkg_ports/libiconv
+# forces GNU libiconv to build on macOS instead of using the system stub.
 find_package(Iconv REQUIRED)
 if(Iconv_FOUND)
   list(APPEND DUCKPST_LINK Iconv::Iconv)

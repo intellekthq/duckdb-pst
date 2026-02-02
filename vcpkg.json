@@ -6,7 +6,8 @@
                 "boost-iostreams",
                 "boost-core",
                 "boost-config",
-                "boost-utility"
+                "boost-utility",
+                "libiconv"
         ],
         "vcpkg-configuration": {
                 "overlay-ports": [
