@@ -1,4 +1,15 @@
 #include "table_function.hpp"
+#include "duckdb/common/enums/expression_type.hpp"
+#include "duckdb/common/unique_ptr.hpp"
+#include "duckdb/execution/partition_info.hpp"
+#include "duckdb/planner/expression/bound_columnref_expression.hpp"
+#include "duckdb/planner/expression_iterator.hpp"
+#include "duckdb/planner/filter/conjunction_filter.hpp"
+#include "duckdb/planner/filter/constant_filter.hpp"
+#include "duckdb/planner/filter/optional_filter.hpp"
+#include "duckdb/planner/filter/in_filter.hpp"
+#include "duckdb/planner/operator/logical_get.hpp"
+#include "duckdb/planner/table_filter.hpp"
 #include "function_state.hpp"
 #include "pst/typed_bag.hpp"
 #include "schema.hpp"
@@ -6,7 +17,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/common/helper.hpp"
-#include "duckdb/common/multi_file/multi_file_reader.hpp"
+
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/open_file_info.hpp"
 #include "duckdb/common/table_column.hpp"
@@ -23,8 +34,11 @@
 #include "pstsdk/pst/pst.h"
 #include "pstsdk/pst/folder.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <exception>
 #include <future>
+#include <iterator>
 #include <limits>
 
 namespace intellekt::duckpst {
@@ -37,13 +51,100 @@ PSTInputPartition::PSTInputPartition(const idx_t partition_index,
                                      PartitionStatistics stats,
                                      const vector<node_id> &&nodes)
     : partition_index(partition_index), pst(pst), file(file), mode(mode),
-      stats(std::move(stats)), nodes(nodes) {}
+      stats(std::move(stats)), nodes(nodes),
+      partition_data(OperatorPartitionData(partition_index)) {}
 
 PSTInputPartition::PSTInputPartition(const PSTInputPartition &other_partition)
     : partition_index(other_partition.partition_index),
       pst(other_partition.pst), file(other_partition.file),
       mode(other_partition.mode), stats(other_partition.stats),
-      nodes(other_partition.nodes){};
+      nodes(other_partition.nodes),
+      partition_data(other_partition.partition_data){};
+
+set<node_id> PSTInputPartition::prune(idx_t schema_col,
+                                      const unique_ptr<TableFilter> &filter) {
+  set<node_id> filtered;
+
+  switch (filter->filter_type) {
+  case TableFilterType::OPTIONAL_FILTER: {
+    auto &optional_filter = filter->Cast<OptionalFilter>();
+    filtered = prune(schema_col, optional_filter.child_filter);
+    break;
+  }
+  case TableFilterType::CONSTANT_COMPARISON: {
+    auto &constant_filter = filter->Cast<ConstantFilter>();
+    switch (schema_col) {
+    case schema::PST_VCOL_NODE_ID:
+      for (auto &nid : nodes) {
+        if (constant_filter.Compare(Value::UINTEGER(nid))) {
+          filtered.insert(nid);
+        }
+      }
+      break;
+    case schema::PST_VCOL_PARTITION_INDEX:
+      if (constant_filter.Compare(Value::UBIGINT(partition_index))) {
+        filtered.insert(nodes.begin(), nodes.end());
+      }
+      break;
+    }
+    break;
+  }
+  case TableFilterType::CONJUNCTION_AND: {
+    auto &and_filter = filter->Cast<ConjunctionAndFilter>();
+    filtered = prune(schema_col, and_filter.child_filters[0]);
+
+    if (and_filter.child_filters.size() < 2)
+      break;
+
+    for (idx_t i = 1; i < and_filter.child_filters.size(); ++i) {
+      set<node_id> intersect;
+      auto pruned_child = prune(schema_col, and_filter.child_filters[i]);
+      std::set_intersection(filtered.begin(), filtered.end(),
+                            pruned_child.begin(), pruned_child.end(),
+                            std::inserter(intersect, intersect.begin()));
+      filtered = std::move(intersect);
+    }
+
+    break;
+  }
+  case TableFilterType::CONJUNCTION_OR: {
+    auto &or_filter = filter->Cast<ConjunctionOrFilter>();
+
+    for (auto &child_filter : or_filter.child_filters) {
+      auto pruned_child = prune(schema_col, child_filter);
+      filtered.insert(pruned_child.begin(), pruned_child.end());
+    }
+
+    break;
+  }
+  case TableFilterType::IN_FILTER: {
+    auto &in_filter = filter->Cast<InFilter>();
+    set<Value> in_values(in_filter.values.begin(), in_filter.values.end());
+
+    switch (schema_col) {
+    case schema::PST_VCOL_NODE_ID:
+      for (auto &nid : nodes) {
+        if (in_values.find(Value::UINTEGER(nid)) != in_values.end()) {
+          filtered.insert(nid);
+        }
+      }
+      break;
+    case schema::PST_VCOL_PARTITION_INDEX:
+      if (in_values.find(Value::UBIGINT(partition_index)) != in_values.end()) {
+        filtered.insert(nodes.begin(), nodes.end());
+      }
+      break;
+    }
+
+    break;
+  }
+  default:
+    filtered = {nodes.begin(), nodes.end()};
+    break;
+  }
+
+  return filtered;
+}
 
 PSTReadTableFunctionData::PSTReadTableFunctionData(
     ClientContext &ctx, const string &&path, const PSTReadFunctionMode mode,
@@ -88,6 +189,11 @@ const idx_t PSTReadTableFunctionData::read_limit() const {
   return parameter_or_default("read_limit", std::numeric_limits<idx_t>().max());
 }
 
+const uint32_t PSTReadTableFunctionData::planning_concurrency() const {
+  return parameter_or_default("planning_concurrency",
+                              std::numeric_limits<uint32_t>().max());
+}
+
 void PSTReadTableFunctionData::bind_table_function_output_schema(
     vector<LogicalType> &return_types, vector<string> &names) {
   auto schema = output_schema(mode);
@@ -102,6 +208,9 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx,
                                                     OpenFileInfo &file,
                                                     idx_t limit) {
   auto pst = make_shared_ptr<pstsdk::pst>(pst::dfile::open(ctx, file));
+
+  DUCKDB_LOG_DEBUG(ctx, "PSTReadTableFunctionData::plan_file_partitions: %s",
+                   file.path);
   vector<node_id> nodes;
 
   idx_t total_rows = 0;
@@ -214,25 +323,38 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx,
 void PSTReadTableFunctionData::plan_input_partitions(ClientContext &ctx) {
   if (!partitions->empty())
     return;
-  auto total_rows = 0;
   auto limit = this->read_limit();
+  auto concurrency = this->planning_concurrency();
 
-  vector<std::future<void>> plan_tasks;
+  // vector<OpenFileInfo> files = this->files;
+  vector<std::tuple<idx_t, std::future<void>>> plan_tasks;
 
-  for (auto &file : files) {
-    plan_tasks.emplace_back(std::async(
-        std::launch::async, &PSTReadTableFunctionData::plan_file_partitions,
-        this, std::ref(ctx), std::ref(file), limit));
-  }
+  auto drain = [&]() {
+    for (idx_t i = 0; i < plan_tasks.size(); ++i) {
+      auto &[file_idx, task] = plan_tasks[i];
+      try {
+        task.get();
+      } catch (std::exception &e) {
+        DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s",
+                         files[file_idx].path, e.what());
+      }
+    }
+
+    plan_tasks.clear();
+  };
 
   for (idx_t i = 0; i < files.size(); ++i) {
-    try {
-      plan_tasks[i].get();
-    } catch (std::exception &e) {
-      DUCKDB_LOG_ERROR(ctx, "Unable to read PST file (%s): %s", files[i].path,
-                       e.what());
+    if (plan_tasks.size() >= concurrency) {
+      drain();
     }
+
+    plan_tasks.emplace_back(std::tuple{
+        i, std::async(std::launch::async,
+                      &PSTReadTableFunctionData::plan_file_partitions, this,
+                      std::ref(ctx), std::ref(files[i]), limit)});
   }
+
+  drain();
 
   DUCKDB_LOG_INFO(ctx, "Planned %d partitions (%d files)", partitions->size(),
                   files.size());
@@ -255,15 +377,18 @@ unique_ptr<FunctionData> PSTReadTableFunctionData::Copy() const {
 
 unique_ptr<GlobalTableFunctionState>
 PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input) {
-  auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
-  auto global_state =
-      make_uniq<PSTReadGlobalState>(bind_data, input.column_ids);
+  DUCKDB_LOG_DEBUG(ctx, "init_global [PSTReadInitGlobal]");
+
+  auto &pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
+  auto global_state = make_uniq<PSTReadGlobalState>(pst_data, input);
+
   return global_state;
 }
 
 unique_ptr<LocalTableFunctionState>
 PSTReadInitLocal(ExecutionContext &ec, TableFunctionInitInput &input,
                  GlobalTableFunctionState *global) {
+  DUCKDB_LOG_DEBUG(ec, "init_local [PSTReadInitLocal]");
   auto &bind_data = input.bind_data->Cast<PSTReadTableFunctionData>();
   auto &global_state = global->Cast<PSTReadGlobalState>();
 
@@ -313,6 +438,7 @@ unique_ptr<FunctionData> PSTReadBind(ClientContext &ctx,
                                      TableFunctionBindInput &input,
                                      vector<LogicalType> &return_types,
                                      vector<string> &names) {
+  DUCKDB_LOG_DEBUG(ctx, "bind [PSTReadBind]");
   auto path = input.inputs[0].GetValue<string>();
   unique_ptr<PSTReadTableFunctionData> function_data =
       make_uniq<PSTReadTableFunctionData>(
@@ -359,20 +485,20 @@ TablePartitionInfo PSTPartitionInfo(ClientContext &ctx,
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
                        const GlobalTableFunctionState *global_state) {
   auto &pst_state = global_state->Cast<PSTReadGlobalState>();
-  auto cardinality =
-      PSTReadCardinality(context, bind_data)->estimated_cardinality;
-  return (100.0 * pst_state.nodes_processed) / std::max<idx_t>(cardinality, 1);
+  return (100.0 * pst_state.partitions_processed) /
+         std::max<idx_t>(pst_state.nonempty_partition_count, 1);
 }
 
 InsertionOrderPreservingMap<string>
 PSTDynamicToString(duckdb::TableFunctionDynamicToStringInput &input) {
   auto &pst_data = input.bind_data->Cast<PSTReadTableFunctionData>();
+  auto &global_state = input.global_state->Cast<PSTReadGlobalState>();
 
   InsertionOrderPreservingMap<string> meta;
 
-  meta.insert(make_pair("Files read", std::to_string(pst_data.files.size())));
+  meta.insert(make_pair("Files read", std::to_string(global_state.files_read)));
   meta.insert(make_pair("Partitions read",
-                        std::to_string(pst_data.partitions->size())));
+                        std::to_string(global_state.nonempty_partition_count)));
   meta.insert(
       make_pair("Partition size", std::to_string(pst_data.partition_size())));
 
@@ -400,6 +526,12 @@ vector<column_t> PSTRowIDColumns(ClientContext &ctx,
                                  optional_ptr<FunctionData> bind_data) {
   DUCKDB_LOG_DEBUG(ctx, "get_row_id_columns [PSTRowIDColumns]");
   return {schema::PST_VCOL_NODE_ID, schema::PST_VCOL_PARTITION_INDEX};
+}
+
+bool PSTPushdownExpression(ClientContext &ctx, const LogicalGet &get,
+                           Expression &expr) {
+  // We do not handle arbitrary expression filters
+  return false;
 }
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input,

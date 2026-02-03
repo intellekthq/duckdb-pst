@@ -21,12 +21,16 @@ class PSTReadGlobalState : public GlobalTableFunctionState {
 
 public:
   PSTReadGlobalState(const PSTReadTableFunctionData &bind_data,
-                     vector<column_t> column_ids);
+                     const TableFunctionInitInput &input);
   const PSTReadTableFunctionData &bind_data;
 
   std::optional<PSTInputPartition> take_partition();
 
+  idx_t nonempty_partition_count;
+  idx_t partitions_processed;
   idx_t nodes_processed;
+  idx_t files_read;
+
   vector<column_t> column_ids;
   idx_t MaxThreads() const override;
 };

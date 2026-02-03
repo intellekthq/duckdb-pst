@@ -79,7 +79,8 @@ inline const named_parameter_type_map_t NAMED_PARAMETERS = {
     {"read_body_size_bytes", LogicalType::UBIGINT},
     {"partition_size", LogicalType::UBIGINT},
     {"read_attachment_body", LogicalType::BOOLEAN},
-    {"read_limit", LogicalType::UBIGINT}};
+    {"read_limit", LogicalType::UBIGINT},
+    {"planning_concurrency", LogicalType::UINTEGER}};
 
 /**
  * A PST read as expressed by node IDs in a file
@@ -95,6 +96,7 @@ struct PSTInputPartition {
   const PSTReadFunctionMode mode;
   PartitionStatistics stats;
   vector<node_id> nodes;
+  OperatorPartitionData partition_data;
 
   PSTInputPartition(const idx_t partition_index,
                     const shared_ptr<pstsdk::pst> pst, const OpenFileInfo file,
@@ -102,6 +104,8 @@ struct PSTInputPartition {
                     const PartitionStatistics stats,
                     const vector<node_id> &&nodes);
   PSTInputPartition(const PSTInputPartition &other_partition);
+
+  set<node_id> prune(idx_t schema_col, const unique_ptr<TableFilter> &filter);
 };
 
 struct PSTReadTableFunctionData : public TableFunctionData {
@@ -131,6 +135,7 @@ public:
   const idx_t read_body_size_bytes() const;
   const bool read_attachment_body() const;
   const idx_t read_limit() const;
+  const uint32_t planning_concurrency() const;
 
   /**
    * @brief Bind table function output schema based on read mode
@@ -202,6 +207,9 @@ virtual_column_map_t PSTVirtualColumns(ClientContext &ctx,
 
 vector<column_t> PSTRowIDColumns(ClientContext &ctx,
                                  optional_ptr<FunctionData> bind_data);
+
+bool PSTPushdownExpression(ClientContext &ctx, const LogicalGet &get,
+                           Expression &expr);
 
 void PSTReadFunction(ClientContext &ctx, TableFunctionInput &input,
                      DataChunk &output);

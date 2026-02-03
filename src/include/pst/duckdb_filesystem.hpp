@@ -37,5 +37,7 @@ public:
               pstsdk::ulonglong offset) const override;
   size_t write(const std::vector<pstsdk::byte> &buffer,
                pstsdk::ulonglong offset) override;
+
+  virtual ~dfile() = default;
 };
 } // namespace intellekt::duckpst::pst

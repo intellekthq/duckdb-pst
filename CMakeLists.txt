@@ -25,10 +25,11 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
 endif()
 
 include_directories(src/include)
-include_directories(microsoft-pst-sdk)
+include_directories(SYSTEM microsoft-pst-sdk)
 
 set(
   EXTENSION_SOURCES
+  src/filter_optimizer.cpp
   src/function_state.cpp
   src/table_function.cpp
   src/pst_extension.cpp
@@ -45,6 +46,9 @@ if(Boost_FOUND)
   list(APPEND DUCKPST_LINK Boost::thread)
 endif()
 
+# GNU iconv is required on macOS to avoid decoder bug with UTF-16LE.
+# The custom vcpkg overlay port in extension-ci-tools/vcpkg_ports/libiconv
+# forces GNU libiconv to build on macOS instead of using the system stub.
 find_package(Iconv REQUIRED)
 if(Iconv_FOUND)
   list(APPEND DUCKPST_LINK Iconv::Iconv)

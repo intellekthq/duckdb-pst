@@ -3,8 +3,11 @@
 #include "pstsdk/ltp/propbag.h"
 #include "pstsdk/mapitags.h"
 #include "pstsdk/pst/pst.h"
+#include "pstsdk/util/primitives.h"
+#include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <tuple>
 
 namespace intellekt::duckpst::pst {
 
@@ -17,20 +20,40 @@ namespace intellekt::duckpst::pst {
   LT(Task)
 
 #define MESSAGE_CLASS_ENUM(name) name,
+enum MessageClass { MESSAGE_CLASSES(MESSAGE_CLASS_ENUM) };
+
+#define MESSAGE_CLASS_NAME_A(name) "IPM." #name
+#define MESSAGE_CLASS_NAME_W(name) u"IPM." #name
+
+// TODO: No null terminators for this string in `unittest.pst` (as written by
+// Windows Outlook)
+#define MESSAGE_CLASS_CONST_ENTRY_A(name)                                      \
+  std::tuple<const char *, size_t, MessageClass>{                              \
+      MESSAGE_CLASS_NAME_A(name), sizeof(MESSAGE_CLASS_NAME_A(name)) - 1,      \
+      name},
+#define MESSAGE_CLASS_CONST_ENTRY_W(name)                                      \
+  std::tuple<const char16_t *, size_t, MessageClass>{                          \
+      MESSAGE_CLASS_NAME_W(name),                                              \
+      sizeof(MESSAGE_CLASS_NAME_W(name)) - sizeof(char16_t), name},
+
+inline const std::vector<std::tuple<const char *, size_t, MessageClass>>
+    MESSAGE_CLASS_CONST_ENTRIES_A = {
+        MESSAGE_CLASSES(MESSAGE_CLASS_CONST_ENTRY_A)};
+
+inline const std::vector<std::tuple<const char16_t *, size_t, MessageClass>>
+    MESSAGE_CLASS_CONST_ENTRIES_W = {
+        MESSAGE_CLASSES(MESSAGE_CLASS_CONST_ENTRY_W)};
+
 #define CONTAINER_CLASS_NAME(name) "IPF." #name,
 #define MESSAGE_CLASS_NAME(name) "IPM." #name,
 #define MESSAGE_CLASS_ENTRY(name) {MESSAGE_CLASS_NAME(name) name},
 #define CONTAINER_CLASS_ENTRY(name) {CONTAINER_CLASS_NAME(name) name},
-
-enum MessageClass { MESSAGE_CLASSES(MESSAGE_CLASS_ENUM) };
 
 inline const std::vector<const char *> MESSAGE_CLASS_NAMES = {
     MESSAGE_CLASSES(MESSAGE_CLASS_NAME)};
 inline const std::vector<const char *> CONTAINER_CLASS_NAMES = {
     MESSAGE_CLASSES(MESSAGE_CLASS_NAME)};
 
-inline const std::unordered_map<std::string, MessageClass> MESSAGE_CLASS_MAP = {
-    MESSAGE_CLASSES(MESSAGE_CLASS_ENTRY)};
 inline const std::unordered_map<std::string, MessageClass> CONTAINER_CLASS_MAP =
     {MESSAGE_CLASSES(CONTAINER_CLASS_ENTRY)};
 
@@ -90,16 +113,29 @@ inline MessageClass container_class(const pstsdk::pst &pst,
 inline MessageClass message_class(const pstsdk::pst &pst,
                                   const pstsdk::node_id &nid) {
   auto bag = pstsdk::property_bag(pst.get_db().get()->lookup_node(nid));
-  auto maybe_msg_class =
-      bag.read_prop_if_exists<std::string>(PR_MESSAGE_CLASS_A);
 
   auto klass = BASE_CLASS;
 
-  if (maybe_msg_class) {
-    auto maybe_klass = MESSAGE_CLASS_MAP.find(*maybe_msg_class);
-    if (maybe_klass != MESSAGE_CLASS_MAP.end()) {
-      auto &[_name, k] = *maybe_klass;
-      klass = k;
+  if (!bag.prop_exists(PR_MESSAGE_CLASS_A))
+    return klass;
+
+  auto klass_type = bag.get_prop_type(PR_MESSAGE_CLASS_A);
+  auto klass_size = bag.size(PR_MESSAGE_CLASS_A);
+  auto klass_buf = bag.get_value_variable(PR_MESSAGE_CLASS_A);
+
+  if (klass_type == pstsdk::prop_type_string) {
+    for (auto &[s, sz, klass] : MESSAGE_CLASS_CONST_ENTRIES_A) {
+      if (sz != klass_size)
+        continue;
+      if (!memcmp(s, klass_buf.data(), klass_size))
+        return klass;
+    }
+  } else if (klass_type == pstsdk::prop_type_wstring) {
+    for (auto &[s, sz, klass] : MESSAGE_CLASS_CONST_ENTRIES_W) {
+      if (sz != klass_size)
+        continue;
+      if (!memcmp(s, klass_buf.data(), klass_size))
+        return klass;
     }
   }
 

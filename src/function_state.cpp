@@ -1,5 +1,6 @@
 #include "function_state.hpp"
-#include "pst/duckdb_filesystem.hpp"
+
+#include "duckdb/function/table_function.hpp"
 #include "pst/typed_bag.hpp"
 #include "row_serializer.hpp"
 #include "table_function.hpp"
@@ -17,14 +18,48 @@ using namespace pstsdk;
 
 // PSTReadGlobalState
 PSTReadGlobalState::PSTReadGlobalState(
-    const PSTReadTableFunctionData &bind_data, vector<column_t> column_ids)
-    : bind_data(bind_data), column_ids(std::move(column_ids)) {
+    const PSTReadTableFunctionData &bind_data,
+    const TableFunctionInitInput &input)
+    : bind_data(bind_data), column_ids(input.column_ids) {
+  nodes_processed = 0;
+  nonempty_partition_count = 0;
+  partitions_processed = 0;
+
+  set<OpenFileInfo> unique_files_read;
+
   auto sync_partitions = partitions.synchronize();
-  for (auto &part : bind_data.partitions.get()) {
-    sync_partitions->push(part);
+  for (auto partition : bind_data.partitions.get()) {
+
+    if (input.filters) {
+      for (auto &[column_id, f] : input.filters->filters) {
+        auto schema_col = input.column_ids[column_id];
+        switch (schema_col) {
+        case schema::PST_VCOL_PARTITION_INDEX:
+        case schema::PST_VCOL_NODE_ID: {
+          auto new_nodes = partition.prune(schema_col, f);
+          partition.nodes = {new_nodes.begin(), new_nodes.end()};
+          break;
+        }
+        default:
+          break;
+        }
+      }
+    }
+
+    partition.stats.count = partition.nodes.size();
+
+    if (partition.nodes.empty()) {
+      continue;
+    }
+
+    partition.stats.row_start = partition.nodes[0];
+    nonempty_partition_count += 1;
+    unique_files_read.emplace(partition.file);
+
+    sync_partitions->push(partition);
   }
 
-  nodes_processed = 0;
+  files_read = unique_files_read.size();
 }
 
 std::optional<PSTInputPartition> PSTReadGlobalState::take_partition() {
@@ -34,8 +69,9 @@ std::optional<PSTInputPartition> PSTReadGlobalState::take_partition() {
 
   auto part = sync_partitions->front();
 
-  // TODO: it would be more honest if this happened after emission
+  // TODO: update after emit?
   nodes_processed += part.stats.count;
+  partitions_processed += 1;
 
   sync_partitions->pop();
   return std::move(part);
@@ -48,7 +84,7 @@ idx_t PSTReadGlobalState::MaxThreads() const {
 // PSTReadLocalState
 PSTReadLocalState::PSTReadLocalState(PSTReadGlobalState &global_state,
                                      ExecutionContext &ec)
-    : global_state(global_state), ec(ec) {
+    : ec(ec), global_state(global_state) {
   bind_partition();
   if (partition.has_value()) {
     current.emplace(partition->nodes.begin());

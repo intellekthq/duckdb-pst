@@ -1,3 +1,4 @@
+#include "filter_optimizer.hpp"
 #if DUCDKB_BUILD_LOADABLE_EXTENSION
 #define DUCKDB_EXTENSION_MAIN
 #endif
@@ -23,16 +24,17 @@ static void LoadInternal(ExtensionLoader &loader) {
   proto.get_partition_info = duckpst::PSTPartitionInfo;
   proto.get_partition_stats = duckpst::PSTPartitionStats;
 
-  // For late materialization support, however we can't prune partitions
-  // without `filter_pushdown=true` and handling row-by-row filters ourselves
   proto.get_virtual_columns = duckpst::PSTVirtualColumns;
   proto.get_row_id_columns = duckpst::PSTRowIDColumns;
 
   proto.table_scan_progress = duckpst::PSTReadProgress;
   proto.dynamic_to_string = duckpst::PSTDynamicToString;
 
-  proto.late_materialization = true;
+  proto.filter_pushdown = true;
   proto.projection_pushdown = true;
+  proto.late_materialization = true;
+  proto.pushdown_expression = duckpst::PSTPushdownExpression;
+
   proto.named_parameters = duckpst::NAMED_PARAMETERS;
 
   for (auto pair : duckpst::FUNCTIONS) {
@@ -44,7 +46,11 @@ static void LoadInternal(ExtensionLoader &loader) {
   }
 }
 
-void PstExtension::Load(ExtensionLoader &loader) { LoadInternal(loader); }
+void PstExtension::Load(ExtensionLoader &loader) {
+  auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
+  config.optimizer_extensions.emplace_back(duckpst::PSTFilterOptimizer());
+  LoadInternal(loader);
+}
 
 std::string PstExtension::Name() { return "pst"; }
 

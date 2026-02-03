@@ -1120,8 +1120,6 @@ void set_output_column(PSTReadLocalState &local_state,
                        idx_t row_number, idx_t column_index) {
   auto &prop_bag = dlist.bag;
   auto schema_col = local_state.column_ids()[column_index];
-  auto &col_type =
-      StructType::GetChildType(local_state.output_schema(), schema_col);
 
   prop_id named_prop_id = 0;
   switch (schema_col) {
