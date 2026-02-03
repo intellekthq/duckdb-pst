@@ -424,7 +424,7 @@ These queries represent common use-cases for traversing PST files or doing basic
 
 ##### Find messages matching a conversation topic
 
-This pushes down a late-materialized scan against a large directory of PST files (171 files, 77.4GiB):
+This pushes down a late-materialized scan against a large directory of PST files:
 
 ```sql
 select pst_name, conversation_topic, message_size, creation_time 
