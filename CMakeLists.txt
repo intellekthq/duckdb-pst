@@ -16,7 +16,7 @@ project(${TARGET_NAME})
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(MSVC)
-  set(CMAKE_CXX_FLAGS "/DPSTSDK_VALIDATION_LEVEL_FULL /EHsc /nologo /std:c++17 /W4 /WX /wd4244 /wd4267 /wd4456 /wd4127")
+  set(CMAKE_CXX_FLAGS "/DPSTSDK_VALIDATION_LEVEL_FULL /DVC_EXTRALEAN /DWIN32_LEAN_AND_MEAN /D_HAS_STD_BYTE=0 /EHsc /nologo /std:c++17 /W4 /WX /wd4244 /wd4267 /wd4456 /wd4127 /wd4100 /wd4458 /wd4146")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   # https://clang.llvm.org/docs/DiagnosticsReference.html#wincompatible-ms-struct
   set(CMAKE_CXX_FLAGS "-Wall -Wno-error=incompatible-ms-struct -g -DPSTSDK_VALIDATION_LEVEL_FULL -std=c++17")
