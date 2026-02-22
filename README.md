@@ -1,6 +1,8 @@
 <img width="100" alt="logo" src="https://github.com/user-attachments/assets/279fa223-f786-4e95-9d8f-1d0d9276afce" />
 
 # duckdb-pst
+
+[![Build](https://img.shields.io/github/actions/workflow/status/intellekthq/duckdb-pst/MainDistributionPipeline.yml?label=build)](https://github.com/intellekthq/duckdb-pst/actions/workflows/MainDistributionPipeline.yml)
 A DuckDB extension for reading [Microsoft PST files](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546) with rich schemas for common MAPI types, built on Microsoft's official PST SDK. Query emails, contacts, appointments (and others). Use it to analyze PST data in-place (locally, or on object storage), import to DuckDB tables, or export to Parquet.
 
 ## Getting Started
