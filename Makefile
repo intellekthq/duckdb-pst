@@ -5,7 +5,9 @@ EXT_NAME=pst
 EXT_CONFIG=${PROJ_DIR}extension_config.cmake
 
 # properly (?) set c++17
-EXT_FLAGS=-DCMAKE_CXX_STANDARD=17
+# Override VCPKG_OVERLAY_TRIPLETS to use dynamic CRT (/MD) on Windows,
+# matching DuckDB's loadable extension CRT linkage.
+EXT_FLAGS=-DCMAKE_CXX_STANDARD=17 -DVCPKG_OVERLAY_TRIPLETS=$(PROJ_DIR)toolchains
 
 # Include the Makefile from extension-ci-tools
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
