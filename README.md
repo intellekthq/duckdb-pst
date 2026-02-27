@@ -3,6 +3,7 @@
 # duckdb-pst
 
 [![Build](https://img.shields.io/github/actions/workflow/status/intellekthq/duckdb-pst/MainDistributionPipeline.yml?label=build)](https://github.com/intellekthq/duckdb-pst/actions/workflows/MainDistributionPipeline.yml)
+
 A DuckDB extension for reading [Microsoft PST files](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546) with rich schemas for common MAPI types, built on Microsoft's official PST SDK. Query emails, contacts, appointments (and others). Use it to analyze PST data in-place (locally, or on object storage), import to DuckDB tables, or export to Parquet.
 
 ## Getting Started
@@ -549,6 +550,22 @@ git submodule update --init --recursive
 # Build with UI extension
 GEN=ninja make debug
 ./build/debug/duckdb -ui
+```
+
+###### Windows
+
+```bat
+cmake -G "Ninja" -S duckdb -B build ^
+ -DFORCE_COLORED_OUTPUT=1 ^
+ -DEXTENSION_STATIC_BUILD=1 ^
+ -DDUCKDB_EXTENSION_CONFIGS='C:/path/to/duckdb-pst/extension_config.cmake' ^
+ -DCMAKE_CXX_STANDARD=17 ^
+ -DVCPKG_BUILD=1 ^
+ -DCMAKE_TOOLCHAIN_FILE='C:/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake' ^
+ -DVCPKG_MANIFEST_DIR='C:/path/to/duckdb-pst/' ^
+ -DCMAKE_BUILD_TYPE=Release
+cd build
+Ninja
 ```
 
 ## Credits
