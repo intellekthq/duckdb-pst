@@ -1,3 +1,4 @@
+#include "duckdb/optimizer/optimizer_extension.hpp"
 #include "filter_optimizer.hpp"
 #if DUCDKB_BUILD_LOADABLE_EXTENSION
 #define DUCKDB_EXTENSION_MAIN
@@ -48,7 +49,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 
 void PstExtension::Load(ExtensionLoader &loader) {
   auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
-  config.optimizer_extensions.emplace_back(duckpst::PSTFilterOptimizer());
+  OptimizerExtension::Register(config, duckpst::PSTFilterOptimizer());
   LoadInternal(loader);
 }
 

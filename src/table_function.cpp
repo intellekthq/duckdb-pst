@@ -153,7 +153,7 @@ PSTReadTableFunctionData::PSTReadTableFunctionData(
   auto &fs = FileSystem::GetFileSystem(ctx);
 
   if (FileSystem::HasGlob(path)) {
-    files = fs.GlobFiles(path, ctx);
+    files = fs.GlobFiles(path);
   } else {
     files.push_back(OpenFileInfo(path));
   }
@@ -221,7 +221,7 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx,
     tail.emplace(this->partitions->back());
 
   if (tail) {
-    total_rows = tail->stats.row_start + tail->stats.count;
+    total_rows = tail->stats.row_start.GetIndex() + tail->stats.count;
   }
 
   if (mode == PSTReadFunctionMode::Folder) {
@@ -294,7 +294,7 @@ void PSTReadTableFunctionData::plan_file_partitions(ClientContext &ctx,
   // Reset the row count, as it may have changed
   total_rows = 0;
   if (sync_tail) {
-    total_rows = sync_tail->stats.row_start + sync_tail->stats.count;
+    total_rows = sync_tail->stats.row_start.GetIndex() + sync_tail->stats.count;
   }
 
   while (!nodes.empty() && (total_rows < limit)) {
