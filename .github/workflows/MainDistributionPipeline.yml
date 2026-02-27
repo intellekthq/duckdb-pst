@@ -16,7 +16,7 @@ jobs:
     name: Build extension binaries
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@main
     with:
-      duckdb_version: v1.4.3
+      duckdb_version: v1.5-variegata
       ci_tools_version: main
       extension_name: pst
       exclude_archs: windows_amd64_mingw
@@ -29,7 +29,7 @@ jobs:
     with:
       extension_name: pst
       ci_tools_version: main
-      duckdb_version: v1.4.3
+      duckdb_version: v1.5-variegata
       exclude_archs: windows_amd64_mingw
       deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
 
@@ -37,7 +37,7 @@ jobs:
     name: Code Quality Check
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_code_quality.yml@main
     with:
-      duckdb_version: v1.4.3
+      duckdb_version: v1.5-variegata
       ci_tools_version: main
       extension_name: pst
       format_checks: 'format'
