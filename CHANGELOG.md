@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-03-16
+
+- DuckDB 1.5 (Variegata) compatibility
+  - `OptimizerExtension::Register` API change
+  - `row_start` replaced with `optional_idx`
+  - `FileSystem::HasGlob` context parameter removed
+- Windows: fixed CRT mismatch linker error caused by static CRT (`/MT`) switch in `extension-ci-tools`
+
 ## [0.1.1] - 2026-02-22
 
 - Windows: fixed MSVC build by adding `bytes_to_string` Windows implementation and resolving `std::byte` conflicts
@@ -48,7 +56,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - macOS (x86_64, ARM64)
 - Windows (x86_64)
 
-[Unreleased]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/intellekthq/duckdb-pst/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/intellekthq/duckdb-pst/releases/tag/v0.0.1
