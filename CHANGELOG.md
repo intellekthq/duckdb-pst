@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-12
+
+- Bumped DuckDB submodule to 1.5.1
+
 ## [0.1.2] - 2026-03-16
 
 - DuckDB 1.5 (Variegata) compatibility
@@ -56,7 +60,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - macOS (x86_64, ARM64)
 - Windows (x86_64)
 
-[Unreleased]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/intellekthq/duckdb-pst/compare/v0.0.1...v0.1.0
