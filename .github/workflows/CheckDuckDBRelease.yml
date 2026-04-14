@@ -1,0 +1,173 @@
+name: Check DuckDB Release
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # Daily at 9am UTC
+  workflow_dispatch:      # Manual trigger
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Get current DuckDB version
+        id: current
+        run: |
+          cd duckdb
+          CURRENT_TAG=$(git describe --tags --exact-match 2>/dev/null || echo "")
+          if [ -z "$CURRENT_TAG" ]; then
+            CURRENT_SHA=$(git rev-parse HEAD)
+            echo "Current submodule is at commit $CURRENT_SHA (no tag)"
+            echo "tag=" >> $GITHUB_OUTPUT
+            echo "sha=$CURRENT_SHA" >> $GITHUB_OUTPUT
+          else
+            echo "Current submodule is at tag $CURRENT_TAG"
+            echo "tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
+            echo "sha=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get latest DuckDB release
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST_TAG=$(gh api repos/duckdb/duckdb/releases/latest --jq '.tag_name')
+          echo "Latest DuckDB release: $LATEST_TAG"
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+      - name: Check if update needed
+        id: check
+        run: |
+          CURRENT="${{ steps.current.outputs.tag }}"
+          LATEST="${{ steps.latest.outputs.tag }}"
+
+          if [ -z "$CURRENT" ]; then
+            echo "Current version is not a tag, update needed"
+            echo "needed=true" >> $GITHUB_OUTPUT
+          elif [ "$CURRENT" = "$LATEST" ]; then
+            echo "Already on latest version $LATEST"
+            echo "needed=false" >> $GITHUB_OUTPUT
+          else
+            # Compare versions (strip 'v' prefix for comparison)
+            CURRENT_VER="${CURRENT#v}"
+            LATEST_VER="${LATEST#v}"
+
+            # Simple version comparison using sort -V
+            HIGHER=$(printf '%s\n%s' "$CURRENT_VER" "$LATEST_VER" | sort -V | tail -n1)
+            if [ "$HIGHER" = "$LATEST_VER" ] && [ "$CURRENT_VER" != "$LATEST_VER" ]; then
+              echo "Update available: $CURRENT -> $LATEST"
+              echo "needed=true" >> $GITHUB_OUTPUT
+            else
+              echo "Current version $CURRENT is >= $LATEST"
+              echo "needed=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Check for existing PR
+        if: steps.check.outputs.needed == 'true'
+        id: existing_pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST="${{ steps.latest.outputs.tag }}"
+          BRANCH_NAME="chore/bump-duckdb-${LATEST}"
+
+          # Check if a PR already exists for this version
+          EXISTING=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already exists for $LATEST"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "No existing PR for $LATEST"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get DuckDB branch name
+        if: steps.check.outputs.needed == 'true' && steps.existing_pr.outputs.exists == 'false'
+        id: branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST="${{ steps.latest.outputs.tag }}"
+
+          # Extract major.minor from tag (e.g., v1.5.1 -> 1.5)
+          VERSION="${LATEST#v}"
+          MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
+
+          # Find the branch matching vX.Y-* pattern
+          BRANCH_NAME=$(gh api "repos/duckdb/duckdb/branches" --paginate --jq ".[] | select(.name | test(\"^v${MAJOR_MINOR}-\")) | .name" | head -1)
+
+          if [ -z "$BRANCH_NAME" ]; then
+            echo "Could not find branch for v${MAJOR_MINOR}, falling back to tag"
+            BRANCH_NAME="$LATEST"
+          fi
+
+          echo "DuckDB branch name: $BRANCH_NAME"
+          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
+      - name: Update submodule and workflow
+        if: steps.check.outputs.needed == 'true' && steps.existing_pr.outputs.exists == 'false'
+        run: |
+          LATEST="${{ steps.latest.outputs.tag }}"
+          BRANCH_NAME="${{ steps.branch.outputs.name }}"
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Update duckdb submodule
+          cd duckdb
+          git fetch --tags origin
+          git checkout "$LATEST"
+          cd ..
+          git add duckdb
+
+          # Update duckdb_version in workflow file
+          sed -i "s/duckdb_version: v[0-9]*\.[0-9]*-[a-z]*/duckdb_version: ${BRANCH_NAME}/g" .github/workflows/MainDistributionPipeline.yml
+          git add .github/workflows/MainDistributionPipeline.yml
+
+          # Show changes
+          echo "=== Changes ==="
+          git diff --cached
+
+      - name: Create Pull Request
+        if: steps.check.outputs.needed == 'true' && steps.existing_pr.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST="${{ steps.latest.outputs.tag }}"
+          BRANCH_NAME="chore/bump-duckdb-${LATEST}"
+
+          # Create and push branch
+          git checkout -b "$BRANCH_NAME"
+          git commit -m "chore: bump duckdb to ${LATEST}"
+          git push -u origin "$BRANCH_NAME"
+
+          # Create PR
+          gh pr create \
+            --title "chore: bump duckdb to ${LATEST}" \
+            --body "$(cat <<EOF
+          ## Summary
+
+          Automated PR to update DuckDB submodule to ${LATEST}.
+
+          - Updates \`duckdb\` submodule to \`${LATEST}\`
+          - Updates \`duckdb_version\` in CI workflow to \`${{ steps.branch.outputs.name }}\`
+
+          ## Testing
+
+          - [ ] CI passes
+          - [ ] Extension builds correctly with new DuckDB version
+
+          ---
+          *This PR was automatically created by the Check DuckDB Release workflow.*
+          EOF
+          )"
