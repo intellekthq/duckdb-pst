@@ -24,10 +24,13 @@ size_t dfile::read(std::vector<pstsdk::byte> &buffer,
 size_t dfile::write(const std::vector<pstsdk::byte> &buffer,
                     pstsdk::ulonglong offset) {
   idx_t write_size = buffer.size();
-  file_handle->Seek(offset);
-  return file_handle->Write(
+  // Positional, like read. One handle is shared by every per-thread copy of a
+  // pst, so seeking it moves the cursor out from under whoever else holds it
+  file_handle->Write(
+      QueryContext(),
       const_cast<void *>(reinterpret_cast<const void *>(&buffer.data()[0])),
-      write_size);
+      write_size, offset);
+  return write_size;
 }
 
 std::shared_ptr<pstsdk::file> dfile::open(duckdb::ClientContext &ctx,
