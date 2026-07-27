@@ -110,6 +110,7 @@ inline const auto RECIPIENT_SCHEMA =
 /* Attachment struct schema */
 
 #define ATTACHMENT_CHILDREN(LT)                                                \
+  LT(node_id, LogicalType::UINTEGER)                                           \
   LT(filename, LogicalType::VARCHAR)                                           \
   LT(mime_type, LogicalType::VARCHAR)                                          \
   LT(size, LogicalType::UBIGINT)                                               \

@@ -123,6 +123,11 @@ duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t,
     auto &col_type = StructType::GetChildType(t, col);
 
     switch (col) {
+    // The subnode id delete_pst_attachments takes, and the only stable handle
+    // on one attachment: an ordinal shifts as soon as a sibling goes
+    case static_cast<int>(schema::AttachmentProjection::node_id):
+      values[col] = Value::UINTEGER(attachment_prop_bag.get_node().get_id());
+      break;
     case static_cast<int>(schema::AttachmentProjection::attach_content_id):
       values[col] = from_prop<std::string>(col_type, attachment_prop_bag,
                                            PR_ATTACH_CONTENT_ID);
