@@ -6,6 +6,9 @@
 
 A DuckDB extension for reading [Microsoft PST files](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546) with rich schemas for common MAPI types, built on Microsoft's official PST SDK. Query emails, contacts, appointments (and others). Use it to analyze PST data in-place (locally, or on object storage), import to DuckDB tables, or export to Parquet.
 
+It can also [delete](#deleting) from a PST in place, so a query that finds
+something sensitive can feed the call that removes it.
+
 ## Getting Started
 
 Quickly count all messages or folders in a directory full of PSTs (171 files, 77.4 GiB):
@@ -120,6 +123,137 @@ All table functions accept the following named parameters. Note that **by defaul
 | `read_attachment_body` | `false`      | Whether to read attachment bytes into the `bytes` field                            |
 | `read_limit`           | `NULL`       | Maximum number of items to read (applied during planning, stops crawling fs)       |
 | `planning_concurrency` | `UINT32_MAX` | Maximum concurrent async tasks during partition planning (applies when globbing multiple PST files). |
+
+## Deleting
+
+The extension can delete from a PST in place, so the same read functions that
+found something sensitive can feed the call that removes it.
+
+**Deletion cannot be undone.** There is no transaction, no rollback and no
+recycle bin; the bytes are unlinked from the store as the statement runs. It is
+locked behind two switches of different kinds, and neither alone is enough:
+
+- `SET pst_allow_delete = true` is per session, and cannot be supplied by
+  something that only knows a function signature
+- `really := true` is per call, and cannot be set once and forgotten
+
+Without `really`, the call is a **preview**. It opens the store read-only,
+resolves every target and reports what would happen, so a node that is not there
+comes back `FAILED` before anything is touched. A preview needs no gate.
+
+```sql
+SELECT * FROM delete_pst_messages(
+  (SELECT pst_path, node_id FROM read_pst_messages('hr.pst')
+    WHERE message_class = 'IPM.Contact'));
+```
+
+```
+┌─────────────────┬─────────┬───────────┬───────┐
+│    pst_path     │ node_id │  status   │ error │
+├─────────────────┼─────────┼───────────┼───────┤
+│ /tmp/rdm/hr.pst │ 2097380 │ PREVIEWED │ NULL  │
+│ /tmp/rdm/hr.pst │ 2097348 │ PREVIEWED │ NULL  │
+└─────────────────┴─────────┴───────────┴───────┘
+```
+
+Add both switches and the same query deletes:
+
+```sql
+SET pst_allow_delete = true;
+
+SELECT * FROM delete_pst_messages(
+  (SELECT pst_path, node_id FROM read_pst_messages('hr.pst')
+    WHERE message_class = 'IPM.Contact'), really := true);
+```
+
+```
+┌─────────────────┬─────────┬─────────┬───────┐
+│    pst_path     │ node_id │ status  │ error │
+├─────────────────┼─────────┼─────────┼───────┤
+│ /tmp/rdm/hr.pst │ 2097380 │ DELETED │ NULL  │
+│ /tmp/rdm/hr.pst │ 2097348 │ DELETED │ NULL  │
+└─────────────────┴─────────┴─────────┴───────┘
+```
+
+| Table Function            | Input Table                                          | Deletes                                              |
+|---------------------------|------------------------------------------------------|------------------------------------------------------|
+| `delete_pst_messages`     | `(pst_path VARCHAR, node_id UINTEGER)`               | One message, and its attachments                     |
+| `delete_pst_folders`      | `(pst_path VARCHAR, node_id UINTEGER)`               | A folder, its subfolders and everything in them      |
+| `delete_pst_attachments`  | `(pst_path VARCHAR, message_node_id UINTEGER, attachment_node_id UINTEGER)` | One attachment, leaving the message |
+| `wipe_pst_free_space`     | a path or glob, not a table                          | Overwrites bytes no node points at                   |
+
+There are no per message-class delete functions. The read functions fan out
+because their schemas differ; deletion is structural and has no class-specific
+behaviour, so class selection belongs in the subquery.
+
+The input table is positional, and the column count and types are checked when
+the statement is bound. A `SELECT *` inside a delete is refused rather than
+served: every column would be read, including bodies and attachment blobs, and
+all but two thrown away.
+
+```sql
+-- Invalid Input Error: delete_pst_messages expects an input table of exactly
+-- 2 columns (pst_path VARCHAR, node_id UINTEGER), but received 27.
+SELECT * FROM delete_pst_messages(
+  (SELECT * FROM read_pst_messages('hr.pst')), really := true);
+```
+
+### Wiping free space
+
+Deleting a message unlinks its blocks but leaves their bytes where they were, so
+the content is still on disk until something overwrites it. `wipe_pst_free_space`
+is that something, and it is the call that makes a scrub irreversible.
+
+```sql
+SELECT * FROM wipe_pst_free_space('hr.pst', really := true);
+```
+
+```
+┌─────────────────┬─────────────┬─────────┬───────┐
+│    pst_path     │ bytes_wiped │ status  │ error │
+├─────────────────┼─────────────┼─────────┼───────┤
+│ /tmp/rdm/hr.pst │ 1934592     │ DELETED │ NULL  │
+└─────────────────┴─────────────┴─────────┴───────┘
+```
+
+The file does not shrink. A PST's size is its allocated extent, and freed space
+is returned to the store's own allocator rather than to the filesystem, so a
+scrubbed store stays the size it was and reuses the space on the next write.
+
+`bytes_wiped` counts free bytes overwritten, not bytes that changed, so running
+it twice reports a similar total both times rather than zero.
+
+### Errors
+
+Anything detectable before the first write aborts the statement: the gate being
+off, a wrong column count or type, a `NULL` path or node id, a remote path.
+
+Anything at or after the first write is reported per row and never aborts. By
+the time the third file fails, the first two are already committed, and a thrown
+query would leave a mutated corpus with no record of what went. `status` is
+`PREVIEWED`, `DELETED` or `FAILED`, and `error` carries the reason.
+
+```sql
+SELECT status, count(*) FROM delete_pst_messages(
+  (SELECT pst_path, node_id FROM read_pst_messages('archive/*.pst')
+    WHERE body ILIKE '%SSN%'), really := true)
+GROUP BY status;
+```
+
+A store that reports corruption partway through is not safe to keep writing to,
+so the rest of that file's targets are abandoned with the same error. Other
+files in the same call carry on.
+
+**Note:** Remote paths are refused. Editing in place over object storage is not
+possible: a rewrite creates a new version and leaves the unscrubbed original in
+the bucket's history, which is the opposite of what a scrub is for. Copy the
+file down, delete from the copy, then upload it.
+
+**Note:** Deleting from a file that the same query is also reading in another
+branch is unsupported and undetectable. Run the delete as its own statement.
+
+**Note:** A `LIMIT 0` on the outer query can skip the finalize pass, so nothing
+is deleted. This fails safe, but is surprising.
 
 ## Schemas
 
@@ -383,6 +517,7 @@ Used in the `attachments` field. Each attachment contains:
 
 | Field                | Type       | Description                                                          |
 |----------------------|------------|----------------------------------------------------------------------|
+| `node_id`            | `UINTEGER` | Attachment subnode ID, taken by `delete_pst_attachments`             |
 | `filename`           | `VARCHAR`  | Attachment filename                                                  |
 | `mime_type`          | `VARCHAR`  | MIME type of the attachment                                          |
 | `size`               | `UBIGINT`  | Attachment size in bytes                                             |

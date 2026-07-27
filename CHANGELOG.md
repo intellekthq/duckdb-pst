@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Added in-place deletion: `delete_pst_messages`, `delete_pst_folders`, `delete_pst_attachments` and `wipe_pst_free_space`
+  - Gated behind `SET pst_allow_delete = true` and a per-call `really := true`; without `really` the call previews, resolving every target and writing nothing
+  - Targets come from a nested read, so the query that finds an item can delete it. The input table is positional and its arity and types are checked at bind time
+  - Errors before the first write abort the statement; errors at or after it are reported per row as `FAILED`, so a partial failure cannot hide behind a rolled-back query
+  - Remote paths are refused: rewriting an object leaves the unscrubbed original in version history
+- Added `node_id` to the attachment struct, the subnode ID `delete_pst_attachments` takes
 - Registered `PSTFilterOptimizer` in `LoadInternal` rather than `Extension::Load`; the loadable build enters through `DUCKDB_CPP_EXTENSION_ENTRY` and never calls `Load`, so `LOAD pst` had no filter optimizer
 
 ## [0.1.3] - 2026-04-12
