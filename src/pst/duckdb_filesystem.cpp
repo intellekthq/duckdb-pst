@@ -9,9 +9,16 @@
 namespace intellekt::duckpst::pst {
 using namespace duckdb;
 
-dfile::dfile(ClientContext &ctx, const OpenFileInfo &file) : pstsdk::file() {
+dfile::dfile(ClientContext &ctx, const OpenFileInfo &file, bool writable)
+    : pstsdk::file() {
   auto &fs = FileSystem::GetFileSystem(ctx);
-  file_handle = fs.OpenFile(file, FileOpenFlags::FILE_FLAGS_READ);
+  // Read plus write is O_RDWR with no truncation, which is what editing a store
+  // in place needs. No lock is taken, so the read handles a scan still holds
+  // stay valid alongside it
+  auto flags = writable ? FileOpenFlags::FILE_FLAGS_READ |
+                              FileOpenFlags::FILE_FLAGS_WRITE
+                        : FileOpenFlags::FILE_FLAGS_READ;
+  file_handle = fs.OpenFile(file, flags);
 }
 
 size_t dfile::read(std::vector<pstsdk::byte> &buffer,
@@ -37,5 +44,12 @@ std::shared_ptr<pstsdk::file> dfile::open(duckdb::ClientContext &ctx,
                                           const duckdb::OpenFileInfo &finfo) {
   return std::make_shared<dfile>(ctx, finfo);
 }
+
+std::shared_ptr<dfile> dfile::open_writable(duckdb::ClientContext &ctx,
+                                            const duckdb::OpenFileInfo &finfo) {
+  return std::make_shared<dfile>(ctx, finfo, true);
+}
+
+void dfile::sync() { file_handle->Sync(); }
 
 } // namespace intellekt::duckpst::pst
