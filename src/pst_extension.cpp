@@ -4,6 +4,7 @@
 #define DUCKDB_EXTENSION_MAIN
 #endif
 
+#include "delete_function.hpp"
 #include "table_function.hpp"
 #include "pst_extension.hpp"
 #include "duckdb/common/exception.hpp"
@@ -57,6 +58,35 @@ static void LoadInternal(ExtensionLoader &loader) {
     concrete.name = name;
     loader.RegisterFunction(concrete);
   }
+
+  TableFunction delete_proto("default", {LogicalType::TABLE}, nullptr,
+                             duckpst::PSTDeleteBind,
+                             duckpst::PSTDeleteInitGlobal);
+
+  delete_proto.in_out_function = duckpst::PSTDeleteFunction;
+  delete_proto.in_out_function_final = duckpst::PSTDeleteFinalFunction;
+  delete_proto.named_parameters = duckpst::DELETE_NAMED_PARAMETERS;
+
+  // Targets are grouped per file, so output order does not follow input order
+  delete_proto.order_preservation_type = OrderPreservationType::NO_ORDER;
+
+  for (auto pair : duckpst::DELETE_FUNCTIONS) {
+    auto &[name, mode] = pair;
+    if (mode == duckpst::PSTDeleteFunctionMode::FreeSpace)
+      continue;
+
+    TableFunction concrete = delete_proto;
+    concrete.name = name;
+    loader.RegisterFunction(concrete);
+  }
+
+  // A wipe takes a globbable path rather than a table of node ids
+  TableFunction wipe("wipe_pst_free_space", {LogicalType::VARCHAR},
+                     duckpst::PSTWipeFunction, duckpst::PSTWipeBind,
+                     duckpst::PSTDeleteInitGlobal);
+
+  wipe.named_parameters = duckpst::DELETE_NAMED_PARAMETERS;
+  loader.RegisterFunction(wipe);
 }
 
 void PstExtension::Load(ExtensionLoader &loader) { LoadInternal(loader); }
