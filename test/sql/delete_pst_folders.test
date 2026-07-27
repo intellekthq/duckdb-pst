@@ -1,0 +1,92 @@
+# name: test/sql/delete_pst_folders.test
+# description: Test delete_pst_folders, which takes a folder's whole subtree
+# group: [sql]
+
+require pst
+
+# Not enable_verification: it runs every statement five or six times, so a
+# delete would land once and then fail as FAILED on every repeat
+statement ok
+PRAGMA disable_verification
+
+statement ok
+load pst;
+
+unzip test/unittest.pst.gz __TEST_DIR__/folders.pst
+
+statement ok
+SET pst_allow_delete = true
+
+query II
+SELECT count(*), (SELECT count(*) FROM read_pst_messages('__TEST_DIR__/folders.pst'))
+  FROM read_pst_folders('__TEST_DIR__/folders.pst')
+----
+16	12
+
+# The store's root has no parent to unlink it from, and the obvious sweeping
+# query returns it, so it is refused per row rather than taking the store
+query II
+SELECT status, error IS NOT NULL FROM delete_pst_folders(
+  (SELECT '__TEST_DIR__/folders.pst', 290::UINTEGER), really := true)
+----
+FAILED	true
+
+query I
+SELECT count(*) FROM read_pst_folders('__TEST_DIR__/folders.pst')
+----
+16
+
+# Notes holds two sticky notes, and both go with it
+query IIII
+SELECT * FROM delete_pst_folders(
+  (SELECT pst_path, node_id FROM read_pst_folders('__TEST_DIR__/folders.pst')
+    WHERE display_name = 'Notes'), really := true)
+----
+__TEST_DIR__/folders.pst	33090	DELETED	NULL
+
+query I
+SELECT count(*) FROM read_pst_folders('__TEST_DIR__/folders.pst')
+----
+15
+
+query I
+SELECT count(*) FROM read_pst_folders('__TEST_DIR__/folders.pst') WHERE display_name = 'Notes'
+----
+0
+
+# The messages that hung off it went with it
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/folders.pst')
+----
+10
+
+query I
+SELECT count(*) FROM read_pst_sticky_notes('__TEST_DIR__/folders.pst')
+----
+0
+
+# Every other folder is still reachable, so the hierarchy table was rewritten
+# rather than truncated
+query I
+SELECT count(*) FROM read_pst_folders('__TEST_DIR__/folders.pst')
+  WHERE display_name IN ('Inbox', 'Calendar', 'Contacts', 'Tasks', 'Drafts')
+----
+5
+
+query I
+SELECT message_count FROM read_pst_folders('__TEST_DIR__/folders.pst')
+  WHERE display_name = 'Inbox'
+----
+4
+
+# Deleting a folder that is already gone fails and changes nothing
+query I
+SELECT status FROM delete_pst_folders(
+  (SELECT '__TEST_DIR__/folders.pst', 33090::UINTEGER), really := true)
+----
+FAILED
+
+query I
+SELECT count(*) FROM read_pst_folders('__TEST_DIR__/folders.pst')
+----
+15

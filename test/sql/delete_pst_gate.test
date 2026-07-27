@@ -1,0 +1,138 @@
+# name: test/sql/delete_pst_gate.test
+# description: Test the pst_allow_delete gate and the delete input table contract
+# group: [sql]
+
+require pst
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+load pst;
+
+# The gate is off unless the session turns it on
+query I
+SELECT current_setting('pst_allow_delete')
+----
+false
+
+# A preview needs no gate, because it writes nothing
+query IIII
+SELECT * FROM delete_pst_messages(
+  (SELECT pst_path, node_id FROM read_pst_notes('test/unittest.pst')
+    WHERE node_id = 2097188))
+----
+test/unittest.pst	2097188	PREVIEWED	NULL
+
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT pst_path, node_id FROM read_pst_notes('test/unittest.pst')), really := true)
+----
+<REGEX>:.*delete_pst_messages is disabled.*SET pst_allow_delete = true.*
+
+statement error
+SELECT * FROM delete_pst_folders(
+  (SELECT pst_path, node_id FROM read_pst_folders('test/unittest.pst')), really := true)
+----
+<REGEX>:.*delete_pst_folders is disabled.*
+
+statement error
+SELECT * FROM delete_pst_attachments(
+  (SELECT m.pst_path, m.node_id, a.node_id
+     FROM read_pst_messages('test/unittest.pst') m, UNNEST(m.attachments) t(a)),
+  really := true)
+----
+<REGEX>:.*delete_pst_attachments is disabled.*
+
+statement error
+SELECT * FROM wipe_pst_free_space('test/unittest.pst', really := true)
+----
+<REGEX>:.*wipe_pst_free_space is disabled.*
+
+statement ok
+SET pst_allow_delete = true
+
+query I
+SELECT current_setting('pst_allow_delete')
+----
+true
+
+# RESET puts the gate back, so enabling it for one statement cannot leak
+statement ok
+RESET pst_allow_delete
+
+query I
+SELECT current_setting('pst_allow_delete')
+----
+false
+
+statement ok
+SET pst_allow_delete = true
+
+# SELECT * inside a delete reads every column and discards all but two, so bind
+# refuses it and names what it wanted instead
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT * FROM read_pst_notes('test/unittest.pst')), really := true)
+----
+<REGEX>:.*exactly 2 columns.*pst_path VARCHAR, node_id UINTEGER.*received 27.*
+
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT pst_path FROM read_pst_notes('test/unittest.pst')), really := true)
+----
+<REGEX>:.*exactly 2 columns.*received 1.*
+
+statement error
+SELECT * FROM delete_pst_attachments(
+  (SELECT pst_path, node_id FROM read_pst_messages('test/unittest.pst')), really := true)
+----
+<REGEX>:.*exactly 3 columns.*received 2.*
+
+# Reversed columns are the mistake a caller is most likely to make, and both
+# orders bind as two columns, so the type check is what catches it
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT node_id, pst_path FROM read_pst_notes('test/unittest.pst')), really := true)
+----
+<REGEX>:.*column 1 \(pst_path\) is UINTEGER.*cannot be read as VARCHAR.*
+
+# A literal still binds, because bind rewrites input_table_types and DuckDB
+# inserts the casts
+query IIII
+SELECT * FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER WHERE false))
+----
+
+# Editing a remote store in place is impossible: a rewrite leaves the original
+# bytes in the bucket's version history
+statement error
+SELECT * FROM wipe_pst_free_space('s3://bucket/x.pst', really := true)
+----
+<REGEX>:.*remote.*
+
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT 's3://bucket/x.pst', 2097188::UINTEGER), really := true)
+----
+<REGEX>:.*remote.*
+
+# A NULL path or node id has no target to resolve, so it fails the call rather
+# than silently deleting nothing
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT NULL::VARCHAR, 2097188::UINTEGER), really := true)
+----
+<REGEX>:.*NULL.*
+
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', NULL::UINTEGER), really := true)
+----
+<REGEX>:.*NULL.*
+
+# The shared fixture is untouched by any of the above
+query I
+SELECT count(*) FROM read_pst_messages('test/unittest.pst')
+----
+12

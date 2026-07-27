@@ -1,0 +1,110 @@
+# name: test/sql/delete_pst_messages.test
+# description: Test delete_pst_messages against a private copy of the fixture
+# group: [sql]
+
+require pst
+
+# Not enable_verification: it runs every statement five or six times, so a
+# delete would land once and then fail as FAILED on every repeat
+statement ok
+PRAGMA disable_verification
+
+statement ok
+load pst;
+
+unzip test/unittest.pst.gz __TEST_DIR__/messages.pst
+
+statement ok
+SET pst_allow_delete = true
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/messages.pst')
+----
+12
+
+query IIII
+SELECT * FROM delete_pst_messages(
+  (SELECT pst_path, node_id FROM read_pst_messages('__TEST_DIR__/messages.pst')
+    WHERE node_id = 2097188), really := true)
+----
+__TEST_DIR__/messages.pst	2097188	DELETED	NULL
+
+# A fresh scan has to see it gone, not a cached plan
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/messages.pst')
+----
+11
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/messages.pst') WHERE node_id = 2097188
+----
+0
+
+# The folder's own counter has to move too, which is what exercises the SDK's
+# bookkeeping rather than just node unlinking
+query I
+SELECT message_count FROM read_pst_folders('__TEST_DIR__/messages.pst')
+  WHERE display_name = 'Inbox'
+----
+3
+
+# Deleting the same node again fails and leaves the store alone
+query II
+SELECT status, error IS NOT NULL FROM delete_pst_messages(
+  (SELECT '__TEST_DIR__/messages.pst', 2097188::UINTEGER), really := true)
+----
+FAILED	true
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/messages.pst')
+----
+11
+
+# One good target and one bogus one in the same call: the good one lands, the
+# bogus one is reported, and the call succeeds rather than rolling back
+query II
+SELECT status, count(*) FROM delete_pst_messages(
+  (SELECT '__TEST_DIR__/messages.pst', 2097220::UINTEGER
+    UNION ALL SELECT '__TEST_DIR__/messages.pst', 999999::UINTEGER),
+  really := true)
+GROUP BY status ORDER BY status
+----
+DELETED	1
+FAILED	1
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/messages.pst')
+----
+10
+
+# Deleting several at once, across message classes
+query I
+SELECT count(*) FROM delete_pst_messages(
+  (SELECT pst_path, node_id FROM read_pst_messages('__TEST_DIR__/messages.pst')
+    WHERE message_class IN ('IPM.Contact', 'IPM.Task')), really := true)
+WHERE status = 'DELETED'
+----
+3
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/messages.pst')
+----
+7
+
+query I
+SELECT count(*) FROM read_pst_contacts('__TEST_DIR__/messages.pst')
+----
+0
+
+# The folders themselves survive their messages going
+query I
+SELECT count(*) FROM read_pst_folders('__TEST_DIR__/messages.pst')
+----
+16
+
+# Contacts held two IPM.Contact and one IPM.DistList, and only the two went
+query I
+SELECT message_count FROM read_pst_folders('__TEST_DIR__/messages.pst')
+  WHERE display_name = 'Contacts'
+----
+1

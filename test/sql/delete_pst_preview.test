@@ -1,0 +1,87 @@
+# name: test/sql/delete_pst_preview.test
+# description: Test that a delete without really := true resolves targets and writes nothing
+# group: [sql]
+
+require pst
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+load pst;
+
+# Runs against the shared fixture on purpose. A preview that needed a private
+# copy would not be provable as harmless.
+
+statement ok
+SET pst_allow_delete = true
+
+query I
+SELECT count(*) FROM read_pst_messages('test/unittest.pst')
+----
+12
+
+# Every target is resolved, so a preview is worth running rather than an echo
+# of its input
+query IIII
+SELECT * FROM delete_pst_messages(
+  (SELECT pst_path, node_id FROM read_pst_messages('test/unittest.pst')
+    WHERE message_class = 'IPM.Contact')) ORDER BY node_id
+----
+test/unittest.pst	2097348	PREVIEWED	NULL
+test/unittest.pst	2097380	PREVIEWED	NULL
+
+# A node that is not there comes back FAILED before anything is touched
+query II
+SELECT status, error IS NOT NULL FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 999999::UINTEGER))
+----
+FAILED	true
+
+# One good and one bogus target in the same call: the good one previews, the
+# bogus one fails, and the call succeeds
+query II
+SELECT status, count(*) FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER
+    UNION ALL SELECT 'test/unittest.pst', 999999::UINTEGER))
+GROUP BY status ORDER BY status
+----
+PREVIEWED	1
+FAILED	1
+
+query II
+SELECT status, error IS NOT NULL FROM delete_pst_folders(
+  (SELECT pst_path, node_id FROM read_pst_folders('test/unittest.pst')
+    WHERE display_name = 'Notes'))
+----
+PREVIEWED	false
+
+query IIIII
+SELECT * FROM delete_pst_attachments(
+  (SELECT m.pst_path, m.node_id, a.node_id
+     FROM read_pst_messages('test/unittest.pst') m, UNNEST(m.attachments) t(a))
+) ORDER BY attachment_node_id
+----
+test/unittest.pst	2097284	32805	PREVIEWED	NULL
+
+# A wipe cannot say how many bytes it would clear without doing it
+query IIII
+SELECT * FROM wipe_pst_free_space('test/unittest.pst')
+----
+test/unittest.pst	NULL	PREVIEWED	NULL
+
+# Nothing above wrote a byte
+query I
+SELECT count(*) FROM read_pst_messages('test/unittest.pst')
+----
+12
+
+query I
+SELECT count(*) FROM read_pst_folders('test/unittest.pst')
+----
+16
+
+query I
+SELECT has_attachments FROM read_pst_messages('test/unittest.pst') WHERE node_id = 2097284
+----
+true
