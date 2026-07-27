@@ -13,6 +13,12 @@ namespace duckdb {
 using namespace intellekt;
 
 static void LoadInternal(ExtensionLoader &loader) {
+  auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
+
+  // Has to be here, not in Load: the loadable build enters through
+  // DUCKDB_CPP_EXTENSION_ENTRY, which never calls Load
+  OptimizerExtension::Register(config, duckpst::PSTFilterOptimizer());
+
   TableFunction proto("default", {LogicalType::VARCHAR},
                       duckpst::PSTReadFunction);
 
@@ -47,11 +53,7 @@ static void LoadInternal(ExtensionLoader &loader) {
   }
 }
 
-void PstExtension::Load(ExtensionLoader &loader) {
-  auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
-  OptimizerExtension::Register(config, duckpst::PSTFilterOptimizer());
-  LoadInternal(loader);
-}
+void PstExtension::Load(ExtensionLoader &loader) { LoadInternal(loader); }
 
 std::string PstExtension::Name() { return "pst"; }
 
