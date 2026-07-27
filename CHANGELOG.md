@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Registered `PSTFilterOptimizer` in `LoadInternal` rather than `Extension::Load`; the loadable build enters through `DUCKDB_CPP_EXTENSION_ENTRY` and never calls `Load`, so `LOAD pst` had no filter optimizer
+
 ## [0.1.3] - 2026-04-12
 
 - Bumped DuckDB submodule to 1.5.1
