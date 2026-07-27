@@ -19,6 +19,12 @@ static void LoadInternal(ExtensionLoader &loader) {
   // DUCKDB_CPP_EXTENSION_ENTRY, which never calls Load
   OptimizerExtension::Register(config, duckpst::PSTFilterOptimizer());
 
+  config.AddExtensionOption(
+      "pst_allow_delete",
+      "Allow delete_pst_* and wipe_pst_free_space to edit PST files in place. "
+      "Deletion cannot be undone.",
+      LogicalType::BOOLEAN, Value::BOOLEAN(false), nullptr, SetScope::SESSION);
+
   TableFunction proto("default", {LogicalType::VARCHAR},
                       duckpst::PSTReadFunction);
 

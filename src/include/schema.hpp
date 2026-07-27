@@ -70,11 +70,21 @@ inline LogicalType AttachMethodSchema() {
   return LogicalType::ENUM(values, 7);
 }
 
+inline LogicalType DeleteStatusSchema() {
+  Vector values(LogicalType::VARCHAR, 3);
+  auto data = FlatVector::GetData<string_t>(values);
+  data[0] = StringVector::AddString(values, "PREVIEWED");
+  data[1] = StringVector::AddString(values, "DELETED");
+  data[2] = StringVector::AddString(values, "FAILED");
+  return LogicalType::ENUM(values, 3);
+}
+
 inline const auto RECIPIENT_TYPE_ENUM = RecipientTypeSchema();
 inline const auto IMPORTANCE_ENUM = ImportanceSchema();
 inline const auto PRIORITY_ENUM = PrioritySchema();
 inline const auto SENSITIVITY_ENUM = SensitivitySchema();
 inline const auto ATTACH_METHOD_ENUM = AttachMethodSchema();
+inline const auto DELETE_STATUS_ENUM = DeleteStatusSchema();
 
 // We'll generate our table function output schemas using x-macros so the
 // serialization code doesn't have to bind against a position ordinal and we can
@@ -360,4 +370,46 @@ enum class FolderProjection {
 
 inline const auto FOLDER_SCHEMA = LogicalType::STRUCT(
     {PST_CHILDREN(SCHEMA_CHILD) FOLDER_CHILDREN(SCHEMA_CHILD)});
+
+/* Delete result schema, one row per node the caller asked to delete */
+
+#define DELETE_NODE_CHILDREN(LT)                                               \
+  LT(pst_path, LogicalType::VARCHAR)                                           \
+  LT(node_id, LogicalType::UINTEGER)                                           \
+  LT(status, DELETE_STATUS_ENUM)                                               \
+  LT(error, LogicalType::VARCHAR)
+
+enum class DeleteNodeProjection { DELETE_NODE_CHILDREN(SCHEMA_CHILD_NAME) };
+
+inline const auto DELETE_NODE_SCHEMA =
+    LogicalType::STRUCT({DELETE_NODE_CHILDREN(SCHEMA_CHILD)});
+
+/* Delete result schema for attachments, which hang off a message */
+
+#define DELETE_ATTACHMENT_CHILDREN(LT)                                         \
+  LT(pst_path, LogicalType::VARCHAR)                                           \
+  LT(message_node_id, LogicalType::UINTEGER)                                   \
+  LT(attachment_node_id, LogicalType::UINTEGER)                                \
+  LT(status, DELETE_STATUS_ENUM)                                               \
+  LT(error, LogicalType::VARCHAR)
+
+enum class DeleteAttachmentProjection {
+  DELETE_ATTACHMENT_CHILDREN(SCHEMA_CHILD_NAME)
+};
+
+inline const auto DELETE_ATTACHMENT_SCHEMA =
+    LogicalType::STRUCT({DELETE_ATTACHMENT_CHILDREN(SCHEMA_CHILD)});
+
+/* Free space wipe result schema, one row per file */
+
+#define WIPE_CHILDREN(LT)                                                      \
+  LT(pst_path, LogicalType::VARCHAR)                                           \
+  LT(bytes_wiped, LogicalType::UBIGINT)                                        \
+  LT(status, DELETE_STATUS_ENUM)                                               \
+  LT(error, LogicalType::VARCHAR)
+
+enum class WipeProjection { WIPE_CHILDREN(SCHEMA_CHILD_NAME) };
+
+inline const auto WIPE_SCHEMA =
+    LogicalType::STRUCT({WIPE_CHILDREN(SCHEMA_CHILD)});
 } // namespace intellekt::duckpst::schema
