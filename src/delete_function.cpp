@@ -24,6 +24,23 @@ static const vector<LogicalType> ATTACHMENT_INPUT_TYPES = {
 static const vector<string> ATTACHMENT_INPUT_NAMES = {
     "pst_path", "message_node_id", "attachment_node_id"};
 
+/**
+ * @brief Whether a path names something this extension must not edit in place
+ *
+ * FileSystem::IsRemoteFile is a case sensitive prefix list, so it misses
+ * S3:// and anything a host registered itself. Any scheme but file:// is
+ * refused instead, which fails closed on filesystems we have never heard of.
+ *
+ * @param path Path as the caller gave it
+ */
+static bool remote_path(const string &path) {
+  const auto scheme_end = path.find("://");
+  if (scheme_end == string::npos)
+    return false;
+
+  return !StringUtil::CIEquals(path.substr(0, scheme_end), "file");
+}
+
 // PSTDeleteTableFunctionData
 
 PSTDeleteTableFunctionData::PSTDeleteTableFunctionData(
@@ -40,6 +57,10 @@ PSTDeleteTableFunctionData::parameter_or_default(const char *parameter_name,
   if (maybe_item == named_parameters.end())
     return default_value;
   auto &[_, v] = *maybe_item;
+  // GetValue on a NULL raises an INTERNAL error, which invalidates the whole
+  // database handle. really := NULL is just not a request to delete
+  if (v.IsNull())
+    return default_value;
   return v.GetValue<T>();
 }
 
@@ -53,7 +74,7 @@ void PSTDeleteTableFunctionData::bind_files(ClientContext &ctx,
 
   // Checked here rather than on the way through: a remote glob that matches
   // nothing looks exactly like a wipe with no work to do
-  if (FileSystem::IsRemoteFile(path))
+  if (remote_path(path))
     throw InvalidInputException(
         "cannot wipe the remote path '%s'. Wiping a PST is an in place edit "
         "and only works on local files. Copy the file down, wipe the copy, "
@@ -141,7 +162,7 @@ unique_ptr<FunctionData> PSTDeleteTableFunctionData::Copy() const {
 static void check_gate(ClientContext &ctx, const string &function_name) {
   Value allow_delete;
   if (ctx.TryGetCurrentSetting("pst_allow_delete", allow_delete) &&
-      allow_delete.GetValue<bool>())
+      !allow_delete.IsNull() && allow_delete.GetValue<bool>())
     return;
 
   throw InvalidInputException(
@@ -214,12 +235,49 @@ void PSTDeleteGlobalState::buffer_target(const string &path,
   sync_buffer->targets[maybe_index->second].push_back(target);
 }
 
+void PSTDeleteGlobalState::buffer_failure(const string &path,
+                                          const PSTDeleteTarget target,
+                                          const string &error) {
+  auto sync_buffer = buffer.synchronize();
+  sync_buffer->results.push_back(
+      {path, target.node, target.owner, 0, PSTDeleteStatus::Failed, error});
+}
+
+/**
+ * @brief Refuse a node the mode has no business deleting
+ *
+ * pstsdk's delete calls take a raw nid and do no type check, so without this
+ * delete_pst_messages would take the store's root folder and report DELETED.
+ *
+ * @param mode Which delete is running
+ * @param nid The node the caller asked for
+ */
+static void check_deletable(PSTDeleteFunctionMode mode, node_id nid) {
+  if (nid == pstsdk::nid_message_store || nid == pstsdk::nid_root_folder)
+    throw InvalidInputException(
+        "refusing to delete node %u, which is the store's root", nid);
+
+  const pstsdk::nid_type type = pstsdk::get_nid_type(nid);
+
+  if (mode == PSTDeleteFunctionMode::Message &&
+      type != pstsdk::nid_type_message &&
+      type != pstsdk::nid_type_associated_message)
+    throw InvalidInputException("node %u is not a message (nid type 0x%02x)",
+                                nid, (uint32_t)type);
+
+  if (mode == PSTDeleteFunctionMode::Folder &&
+      type != pstsdk::nid_type_folder && type != pstsdk::nid_type_search_folder)
+    throw InvalidInputException("node %u is not a folder (nid type 0x%02x)",
+                                nid, (uint32_t)type);
+}
+
 void PSTDeleteGlobalState::drain_file(ClientContext &ctx, const string &path,
                                       const vector<PSTDeleteTarget> &targets,
                                       idx_t from,
                                       vector<PSTDeleteResult> &results) {
   const bool really = bind_data.really();
   auto file = OpenFileInfo(path);
+  const idx_t first_result = results.size();
 
   std::shared_ptr<pst::dfile> writable;
   pstsdk::shared_db_ptr db;
@@ -232,10 +290,11 @@ void PSTDeleteGlobalState::drain_file(ClientContext &ctx, const string &path,
       db = pstsdk::open_database(pst::dfile::open(ctx, file));
     }
   } catch (std::exception &e) {
-    DUCKDB_LOG_ERROR(ctx, "Unable to open PST file (%s): %s", path, e.what());
+    const string message = ErrorData(e).RawMessage();
+    DUCKDB_LOG_ERROR(ctx, "Unable to open PST file (%s): %s", path, message);
     for (idx_t t = from; t < targets.size(); t++)
       results.push_back({path, targets[t].node, targets[t].owner, 0,
-                         PSTDeleteStatus::Failed, e.what()});
+                         PSTDeleteStatus::Failed, message});
     return;
   }
 
@@ -255,6 +314,9 @@ void PSTDeleteGlobalState::drain_file(ClientContext &ctx, const string &path,
     idx_t bytes_wiped = 0;
 
     try {
+      if (bind_data.mode != PSTDeleteFunctionMode::FreeSpace)
+        check_deletable(bind_data.mode, target.node);
+
       switch (bind_data.mode) {
       case PSTDeleteFunctionMode::Message:
         if (really)
@@ -263,11 +325,6 @@ void PSTDeleteGlobalState::drain_file(ClientContext &ctx, const string &path,
           db->lookup_node_info(target.node);
         break;
       case PSTDeleteFunctionMode::Folder:
-        if (target.node == pstsdk::nid_root_folder ||
-            target.node == pstsdk::nid_message_store)
-          throw InvalidInputException(
-              "refusing to delete node %u, which is the store's root",
-              target.node);
         if (really)
           pstsdk::delete_folder(db, target.node);
         else
@@ -286,15 +343,28 @@ void PSTDeleteGlobalState::drain_file(ClientContext &ctx, const string &path,
           db->read_nbt_root();
         break;
       }
+    } catch (std::bad_alloc &) {
+      throw;
     } catch (std::exception &e) {
-      DUCKDB_LOG_ERROR(ctx, "Unable to delete from PST file (%s): %s", path,
-                       e.what());
-      results.push_back({path, target.node, target.owner, 0,
-                         PSTDeleteStatus::Failed, e.what()});
+      // Cancellation and OOM are not this row's problem, and continuing would
+      // keep writing to the store after the user asked us to stop
+      if (dynamic_cast<InterruptException *>(&e) ||
+          dynamic_cast<OutOfMemoryException *>(&e))
+        throw;
 
+      const string message = ErrorData(e).RawMessage();
+      DUCKDB_LOG_ERROR(ctx, "Unable to delete from PST file (%s): %s", path,
+                       message);
+      results.push_back({path, target.node, target.owner, 0,
+                         PSTDeleteStatus::Failed, message});
+
+      // A write that failed partway leaves the store rewritten under a stale
+      // header. IOException is here because dfile writes through DuckDB, so
+      // pstsdk::write_error never actually reaches us
       if (dynamic_cast<pstsdk::database_corrupt *>(&e) ||
-          dynamic_cast<pstsdk::write_error *>(&e))
-        poisoned = e.what();
+          dynamic_cast<pstsdk::write_error *>(&e) ||
+          dynamic_cast<IOException *>(&e))
+        poisoned = message;
 
       continue;
     }
@@ -304,21 +374,41 @@ void PSTDeleteGlobalState::drain_file(ClientContext &ctx, const string &path,
          really ? PSTDeleteStatus::Deleted : PSTDeleteStatus::Previewed, ""});
   }
 
-  if (really && writable)
+  if (!really || !writable)
+    return;
+
+  // Nothing is durable until this returns, so a failure here downgrades every
+  // row this call already recorded rather than throwing the report away
+  try {
     writable->sync();
+  } catch (std::exception &e) {
+    const string message = ErrorData(e).RawMessage();
+    DUCKDB_LOG_ERROR(ctx, "Unable to flush PST file (%s): %s", path, message);
+
+    for (idx_t r = first_result; r < results.size(); r++) {
+      results[r].status = PSTDeleteStatus::Failed;
+      results[r].error = message;
+    }
+  }
 }
 
 void PSTDeleteGlobalState::drain(ClientContext &ctx) {
   auto sync_buffer = buffer.synchronize();
+
+  // Re-checked here, not just in bind: EXECUTE reuses a prepared statement's
+  // bind data, so a statement prepared while the gate was on would otherwise
+  // stay a working delete after RESET
+  if (bind_data.really())
+    check_gate(ctx, bind_data.function_name);
 
   for (idx_t i = 0; i < sync_buffer->paths.size(); i++) {
     const idx_t from = sync_buffer->drained_upto[i];
     if (from >= sync_buffer->targets[i].size())
       continue;
 
-    sync_buffer->drained_upto[i] = sync_buffer->targets[i].size();
     drain_file(ctx, sync_buffer->paths[i], sync_buffer->targets[i], from,
                sync_buffer->results);
+    sync_buffer->drained_upto[i] = sync_buffer->targets[i].size();
   }
 }
 
@@ -331,7 +421,10 @@ idx_t PSTDeleteGlobalState::emit_rows(DataChunk &output) {
     auto &result = sync_buffer->results[sync_buffer->emitted];
 
     idx_t col = 0;
-    output.SetValue(col++, rows, Value(result.path));
+    // Empty only when the input row's path was NULL, which has no path to name
+    output.SetValue(col++, rows,
+                    result.path.empty() ? Value(LogicalType::VARCHAR)
+                                        : Value(result.path));
 
     if (bind_data.mode == PSTDeleteFunctionMode::FreeSpace) {
       output.SetValue(col++, rows,
@@ -386,36 +479,46 @@ OperatorResultType PSTDeleteFunction(ExecutionContext &ec,
     auto path_value = input.GetValue(0, row);
     auto node_value = input.GetValue(attachments ? 2 : 1, row);
 
-    if (path_value.IsNull() || node_value.IsNull())
-      throw InvalidInputException(
-          "%s received a NULL in the input table at row %llu. A NULL path or "
-          "node id has nothing to delete",
-          bind_data.function_name, row);
-
-    auto path = path_value.GetValue<string>();
-
-    // Editing in place over object storage would rewrite the object and leave
-    // the unscrubbed original in version history
-    if (FileSystem::IsRemoteFile(path))
-      throw InvalidInputException(
-          "cannot delete from the remote path '%s'. Deleting from a PST is an "
-          "in place edit and only works on local files. Copy the file down, "
-          "delete from the copy, then upload it",
-          path);
+    const string path =
+        path_value.IsNull() ? "" : path_value.GetValue<string>();
+    const node_id node =
+        node_value.IsNull() ? 0 : node_value.GetValue<node_id>();
 
     node_id owner = 0;
     if (attachments) {
       auto owner_value = input.GetValue(1, row);
-      if (owner_value.IsNull())
-        throw InvalidInputException(
-            "delete_pst_attachments received a NULL message_node_id at row "
-            "%llu",
-            row);
-      owner = owner_value.GetValue<node_id>();
+      if (!owner_value.IsNull())
+        owner = owner_value.GetValue<node_id>();
+
+      if (owner_value.IsNull()) {
+        global_state.buffer_failure(
+            path, PSTDeleteTarget{node, owner},
+            "message_node_id is NULL, so there is no message to delete from");
+        continue;
+      }
     }
 
-    global_state.buffer_target(
-        path, PSTDeleteTarget{node_value.GetValue<node_id>(), owner});
+    if (path_value.IsNull() || node_value.IsNull()) {
+      global_state.buffer_failure(
+          path, PSTDeleteTarget{node, owner},
+          "a NULL path or node id has nothing to delete");
+      continue;
+    }
+
+    // Editing in place over object storage would rewrite the object and leave
+    // the unscrubbed original in version history
+    if (remote_path(path)) {
+      global_state.buffer_failure(
+          path, PSTDeleteTarget{node, owner},
+          StringUtil::Format(
+              "cannot delete from the remote path '%s'. Deleting from a PST is "
+              "an in place edit and only works on local files. Copy the file "
+              "down, delete from the copy, then upload it",
+              path));
+      continue;
+    }
+
+    global_state.buffer_target(path, PSTDeleteTarget{node, owner});
   }
 
   // Emitting nothing is what makes the finalize pass a barrier: no downstream

@@ -163,6 +163,20 @@ public:
   void buffer_target(const string &path, const PSTDeleteTarget target);
 
   /**
+   * @brief Record an input row that cannot be turned into a target
+   *
+   * Throwing instead would abort the query, and by then another pipeline's
+   * finalize may already have committed deletes that the caller would never
+   * hear about.
+   *
+   * @param path PST path as the caller gave it, empty if it was NULL
+   * @param target Node the row named
+   * @param error Why the row is unusable
+   */
+  void buffer_failure(const string &path, const PSTDeleteTarget target,
+                      const string &error);
+
+  /**
    * @brief Open each buffered file and apply the targets that arrived since
    *        the last call, so a second finalize picks up a second pipeline's
    *        rows without redeleting the first one's
