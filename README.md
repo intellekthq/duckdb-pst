@@ -6,7 +6,7 @@
 
 A DuckDB extension for reading [Microsoft PST files](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546) with rich schemas for common MAPI types, built on Microsoft's official PST SDK. Query emails, contacts, appointments (and others). Use it to analyze PST data in-place (locally, or on object storage), import to DuckDB tables, or export to Parquet.
 
-It can also [delete](#deleting) from a PST in place: scrub PII from mail exports, drop privileged or out-of-scope custodian mail before an eDiscovery production, honor a GDPR erasure request against an archive, or strip large attachments to shrink a corpus.
+It can also [delete](#deleting) from a PST in place: scrub PII, drop out-of-scope custodian mail before a production, or strip attachments.
 
 ## Getting Started
 
@@ -125,18 +125,18 @@ All table functions accept the following named parameters. Note that **by defaul
 
 ## Deleting
 
-Deletion is in-place. Nodes are unlinked from the PST's own node and block B-trees and the file is edited where it sits, with no copy and no temporary file. There is no transaction and no rollback, so a delete cannot be undone.
+Deletion is in place: nodes are unlinked from the PST's node and block B-trees, with no copy and no temporary file. Blocks the delete releases are zeroed as it goes. There is no transaction and no rollback, so a delete cannot be undone.
 
-The file does not shrink. A PST's size is its allocated extent; freed space returns to the store's allocator and is reused on the next write, not returned to the filesystem.
+The file does not shrink. Freed space returns to the store's allocator and is reused by the next write, not returned to the filesystem.
 
 Deletion is **disabled by default**. Both switches are required:
 
 | Switch                        | Scope   | Effect                                              |
 |-------------------------------|---------|-----------------------------------------------------|
-| `SET pst_allow_delete = true` | Session | Enables the delete functions                        |
+| `SET pst_allow_delete = true` | Session | Permits `really := true`                            |
 | `really := true`              | Call    | Deletes, instead of previewing                      |
 
-Without `really`, the call previews: it opens the store read-only, resolves every target, and reports `PREVIEWED` or `FAILED` per row. Previews are not gated.
+Without `really`, the call previews: it opens the store read-only, resolves every target, and reports `PREVIEWED` or `FAILED` per row. Previews are not gated, and `bytes_wiped` on a previewed wipe is `NULL`.
 
 | Table Function            | Input Table                                                                 | Deletes                                         |
 |---------------------------|-----------------------------------------------------------------------------|-------------------------------------------------|
@@ -145,67 +145,65 @@ Without `really`, the call previews: it opens the store read-only, resolves ever
 | `delete_pst_attachments`  | `(pst_path VARCHAR, message_node_id UINTEGER, attachment_node_id UINTEGER)` | One attachment, leaving the message             |
 | `wipe_pst_free_space`     | a path or glob, not a table                                                 | Overwrites bytes no node points at              |
 
-There are no per message-class delete functions. Deletion is structural, so class selection belongs in the subquery.
+There are no per message-class delete functions; filter by class in the subquery.
 
 Targets come from a nested read. The input table is positional:
 
 ```sql
-SET pst_allow_delete = true;
+set pst_allow_delete = true;
 
-SELECT * FROM delete_pst_messages(
-  (SELECT pst_path, node_id FROM read_pst_messages('hr.pst')
-    WHERE message_class = 'IPM.Contact'), really := true);
+select * from delete_pst_messages(
+  (select pst_path, node_id from read_pst_messages('/tmp/doc/hr.pst')
+    where message_class = 'IPM.Contact'), really := true);
 ```
 
 ```
 ┌─────────────────┬─────────┬─────────┬───────┐
 │    pst_path     │ node_id │ status  │ error │
 ├─────────────────┼─────────┼─────────┼───────┤
-│ /tmp/rdm/hr.pst │ 2097380 │ DELETED │ NULL  │
-│ /tmp/rdm/hr.pst │ 2097348 │ DELETED │ NULL  │
+│ /tmp/doc/hr.pst │ 2097380 │ DELETED │ NULL  │
+│ /tmp/doc/hr.pst │ 2097348 │ DELETED │ NULL  │
 └─────────────────┴─────────┴─────────┴───────┘
 ```
 
-**Note:** the input table's arity and types are checked at bind time. `SELECT *` inside a delete is refused: it would read every column, bodies and attachment blobs included, and discard all but two.
+The arity and types are checked when the statement is bound. `SELECT *` inside a delete is refused: it would materialize every column, bodies and attachment blobs included. Node IDs are checked too, so a folder ID handed to `delete_pst_messages` comes back `FAILED` rather than taking the folder.
 
 ### Wiping free space
 
-Deleting unlinks a node's blocks but leaves their bytes on disk. `wipe_pst_free_space` overwrites the bytes no node points at.
+`wipe_pst_free_space` overwrites everything the store does not reference. Deleting already zeroes what it releases, so what this adds is space an earlier client freed without clearing, which is where a scrub otherwise leaves readable text behind.
 
 ```sql
-SELECT * FROM wipe_pst_free_space('hr.pst', really := true);
+select * from wipe_pst_free_space('/tmp/doc/hr.pst', really := true);
 ```
 
 ```
 ┌─────────────────┬─────────────┬─────────┬───────┐
 │    pst_path     │ bytes_wiped │ status  │ error │
 ├─────────────────┼─────────────┼─────────┼───────┤
-│ /tmp/rdm/hr.pst │ 1934592     │ DELETED │ NULL  │
+│ /tmp/doc/hr.pst │ 1934592     │ DELETED │ NULL  │
 └─────────────────┴─────────────┴─────────┴───────┘
 ```
 
-`bytes_wiped` counts free bytes overwritten, not bytes that changed, so a second wipe reports a similar total rather than zero.
+`bytes_wiped` counts free bytes overwritten, not bytes that changed, so a second wipe on an unchanged store reports the same total.
 
 ### Errors
 
 `status` is `PREVIEWED`, `DELETED` or `FAILED`, and `error` carries the reason.
 
-Errors detectable before the first write abort the statement: the gate being off, a wrong column count or type, a `NULL` path or node id, a remote path. Errors at or after the first write are reported per row and do not abort, so a partial failure stays visible instead of being hidden by a rolled-back query.
+Errors found at bind time abort the statement: the gate being off, or a wrong column count or type. Everything found later is reported per row. A `UNION ALL` input is several pipelines and DuckDB finalizes each one separately, so by the time a bad row is seen another pipeline may already have committed deletes, and throwing would discard the record of them.
 
 ```sql
-SELECT status, count(*) FROM delete_pst_messages(
-  (SELECT pst_path, node_id FROM read_pst_messages('archive/*.pst')
-    WHERE body ILIKE '%SSN%'), really := true)
-GROUP BY status;
+select status, count(*) from delete_pst_messages(
+  (select pst_path, node_id from read_pst_messages('archive/*.pst')
+    where body ilike '%SSN%'), really := true)
+group by status;
 ```
 
-A store that reports corruption partway through abandons the rest of that file's targets. Other files in the same call continue.
+A store that reports corruption or a write error abandons the rest of that file's targets. Other files in the same call continue.
 
-**Note:** Remote paths are refused. Rewriting an object leaves the unscrubbed original in the bucket's version history. Copy the file down, delete from the copy, then upload it.
+Deleting from a file the same query is also reading in another branch is unsupported and undetectable, and `LIMIT 0` on the outer query can skip the finalize pass so nothing is deleted. Run a delete as its own statement. A read bound before a delete keeps its own view of the store, so re-`EXECUTE` of a prepared read returns pre-delete results until it is re-prepared.
 
-**Note:** Deleting from a file that the same query is also reading in another branch is unsupported and undetectable. Run the delete as its own statement.
-
-**Note:** `LIMIT 0` on the outer query can skip the finalize pass, so nothing is deleted.
+**Note:** any path carrying a scheme other than `file://` is refused. Rewriting an object leaves the unscrubbed original in version history. Copy down, delete, upload.
 
 ## Schemas
 
