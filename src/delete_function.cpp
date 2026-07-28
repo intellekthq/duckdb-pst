@@ -76,9 +76,9 @@ void PSTDeleteTableFunctionData::bind_files(ClientContext &ctx,
   // nothing looks exactly like a wipe with no work to do
   if (remote_path(path))
     throw InvalidInputException(
-        "cannot wipe the remote path '%s'. Wiping a PST is an in place edit "
-        "and only works on local files. Copy the file down, wipe the copy, "
-        "then upload it",
+        "cannot wipe '%s'. Wiping edits the PST in place, which only works on "
+        "a local file. Copy it to local disk, wipe it there, then upload the "
+        "result",
         path);
 
   if (FileSystem::HasGlob(path)) {
@@ -505,16 +505,16 @@ OperatorResultType PSTDeleteFunction(ExecutionContext &ec,
       continue;
     }
 
-    // Editing in place over object storage would rewrite the object and leave
-    // the unscrubbed original in version history
+    // Writing an object back stores a new version, leaving the original, and
+    // the data the caller wanted destroyed, in the bucket
     if (remote_path(path)) {
       global_state.buffer_failure(
           path, PSTDeleteTarget{node, owner},
-          StringUtil::Format(
-              "cannot delete from the remote path '%s'. Deleting from a PST is "
-              "an in place edit and only works on local files. Copy the file "
-              "down, delete from the copy, then upload it",
-              path));
+          StringUtil::Format("cannot delete from '%s'. Deleting edits the PST "
+                             "in place, which only works on a local file. Copy "
+                             "it to local disk, delete from it there, then "
+                             "upload the result",
+                             path));
       continue;
     }
 

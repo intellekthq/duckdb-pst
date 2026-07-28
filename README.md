@@ -125,9 +125,9 @@ All table functions accept the following named parameters. Note that **by defaul
 
 ## Deleting
 
-Deletion is in place: nodes are unlinked from the PST's node and block B-trees, with no copy and no temporary file. Blocks the delete releases are zeroed as it goes. There is no transaction and no rollback, so a delete cannot be undone.
+The delete functions edit a PST in place. There is no copy, no temporary file, no transaction and no rollback, so a delete cannot be undone. Freed blocks are zeroed on the way out, so what you delete is gone rather than just unreachable.
 
-The file does not shrink. Freed space returns to the store's allocator and is reused by the next write, not returned to the filesystem.
+The file does not shrink. Freed space goes back to the store's own allocator for the next write, not to the filesystem.
 
 Deletion is **disabled by default**. Both switches are required:
 
@@ -138,7 +138,7 @@ Deletion is **disabled by default**. Both switches are required:
 
 Without `really`, the call previews: it opens the store read-only, resolves every target, and reports `PREVIEWED` or `FAILED` per row. Previews are not gated, and `bytes_wiped` on a previewed wipe is `NULL`.
 
-**Note:** DuckDB does not enforce the declared scope of an extension setting, so `SET GLOBAL pst_allow_delete = true` arms every connection on the database and a plain `RESET` only clears the connection that ran it. Set it per session, and treat a pooled connection as already armed if anything in the process ever set it globally.
+**Note:** DuckDB does not enforce the declared scope of an extension setting. `SET GLOBAL pst_allow_delete = true` therefore arms every connection on the database, and a plain `RESET` clears only the connection that ran it. Set it per session, and assume a pooled connection is already armed if anything in the process ever set it globally.
 
 | Table Function            | Input Table                                                                 | Deletes                                         |
 |---------------------------|-----------------------------------------------------------------------------|-------------------------------------------------|
@@ -172,7 +172,7 @@ The arity and types are checked when the statement is bound. `SELECT *` inside a
 
 ### Wiping free space
 
-`wipe_pst_free_space` overwrites everything the store does not reference. Deleting already zeroes what it releases, so what this adds is space an earlier client freed without clearing, which is where a scrub otherwise leaves readable text behind.
+`wipe_pst_free_space` overwrites every byte the store does not reference. A delete already zeroes the blocks it frees, so this one is for what earlier writers left behind: space Outlook or another client released without clearing, which is where a scrub otherwise leaves readable text.
 
 ```sql
 select * from wipe_pst_free_space('/tmp/doc/hr.pst', really := true);
@@ -192,7 +192,7 @@ select * from wipe_pst_free_space('/tmp/doc/hr.pst', really := true);
 
 `status` is `PREVIEWED`, `DELETED` or `FAILED`, and `error` carries the reason.
 
-Errors found at bind time abort the statement: the gate being off, or a wrong column count or type. Everything found later is reported per row. A `UNION ALL` input is several pipelines and DuckDB finalizes each one separately, so by the time a bad row is seen another pipeline may already have committed deletes, and throwing would discard the record of them.
+Errors found at bind time abort the statement: the gate being off, or a wrong column count or type. Everything found later is reported per row. A `UNION ALL` input runs as several pipelines that DuckDB finalizes separately, so an earlier pipeline may already have committed deletes by the time a bad row turns up, and throwing would take the record of them with it.
 
 ```sql
 select status, count(*) from delete_pst_messages(
@@ -203,9 +203,11 @@ group by status;
 
 A store that reports corruption or a write error abandons the rest of that file's targets. Other files in the same call continue.
 
-Deleting from a file the same query is also reading in another branch is unsupported and undetectable, and `LIMIT 0` on the outer query can skip the finalize pass so nothing is deleted. Run a delete as its own statement. A read bound before a delete keeps its own view of the store, so re-`EXECUTE` of a prepared read returns pre-delete results until it is re-prepared.
+Run a delete as its own statement. Deleting from a file the same query reads in another branch is unsupported and undetectable, and `LIMIT 0` on the outer query can skip the finalize pass entirely, deleting nothing.
 
-**Note:** any path carrying a scheme other than `file://` is refused. Rewriting an object leaves the unscrubbed original in version history. Copy down, delete, upload.
+A read binds its own view of the store, so re-`EXECUTE` of a statement prepared before a delete returns pre-delete results until it is prepared again.
+
+**Note:** paths carrying a scheme other than `file://` are refused. Object storage has no in place edit: writing the file back stores a new version, and the original, which still holds the data you were trying to destroy, stays in the bucket. Copy the file to local disk, delete from it there, and upload the result.
 
 ## Schemas
 

@@ -104,18 +104,18 @@ SELECT * FROM delete_pst_messages(
   (SELECT 'test/unittest.pst', 2097188::UINTEGER WHERE false))
 ----
 
-# Editing a remote store in place is impossible: a rewrite leaves the original
-# bytes in the bucket's version history
+# Object storage has no in place edit, and writing the file back would leave
+# the original, still holding what the caller wanted destroyed, in the bucket
 statement error
 SELECT * FROM wipe_pst_free_space('s3://bucket/x.pst', really := true)
 ----
-<REGEX>:.*remote.*
+<REGEX>:.*local file.*
 
 # Per row rather than thrown: a UNION ALL input is several pipelines, and by
 # the time a bad row is seen another pipeline's finalize may already have
 # committed deletes the caller would never hear about
 query II
-SELECT status, error LIKE '%remote%' FROM delete_pst_messages(
+SELECT status, error LIKE '%local file%' FROM delete_pst_messages(
   (SELECT 's3://bucket/x.pst', 2097188::UINTEGER), really := true)
 ----
 FAILED	true
