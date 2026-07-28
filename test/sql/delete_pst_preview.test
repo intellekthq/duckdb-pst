@@ -56,6 +56,35 @@ SELECT status, error IS NOT NULL FROM delete_pst_folders(
 ----
 PREVIEWED	false
 
+# A preview has to resolve the target, not echo it back. Folder and attachment
+# modes each resolve differently, so a bogus id must fail in every mode
+query I
+SELECT status FROM delete_pst_folders(
+  (SELECT 'test/unittest.pst', 33090::UINTEGER + 32::UINTEGER * 999::UINTEGER))
+----
+FAILED
+
+query I
+SELECT status FROM delete_pst_attachments(
+  (SELECT 'test/unittest.pst', 2097284::UINTEGER, 999999::UINTEGER))
+----
+FAILED
+
+# a real attachment id, but under a message that does not own it
+query I
+SELECT status FROM delete_pst_attachments(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER, 32805::UINTEGER))
+----
+FAILED
+
+# The nid type check applies to a preview too, so a caller learns before
+# enabling the gate that the target is wrong
+query I
+SELECT status FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 32898::UINTEGER))
+----
+FAILED
+
 query IIIII
 SELECT * FROM delete_pst_attachments(
   (SELECT m.pst_path, m.node_id, a.node_id

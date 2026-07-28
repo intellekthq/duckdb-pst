@@ -111,25 +111,97 @@ SELECT * FROM wipe_pst_free_space('s3://bucket/x.pst', really := true)
 ----
 <REGEX>:.*remote.*
 
-statement error
-SELECT * FROM delete_pst_messages(
+# Per row rather than thrown: a UNION ALL input is several pipelines, and by
+# the time a bad row is seen another pipeline's finalize may already have
+# committed deletes the caller would never hear about
+query II
+SELECT status, error LIKE '%remote%' FROM delete_pst_messages(
   (SELECT 's3://bucket/x.pst', 2097188::UINTEGER), really := true)
 ----
-<REGEX>:.*remote.*
+FAILED	true
 
-# A NULL path or node id has no target to resolve, so it fails the call rather
-# than silently deleting nothing
+# Case, and any scheme a host registered, not just the ones DuckDB lists
+query I
+SELECT status FROM delete_pst_messages(
+  (SELECT 'S3://bucket/x.pst', 2097188::UINTEGER), really := true)
+----
+FAILED
+
+query I
+SELECT status FROM delete_pst_messages(
+  (SELECT 'abfs://acct/x.pst', 2097188::UINTEGER), really := true)
+----
+FAILED
+
+# A good target in the same call still lands, and is still reported
+query III
+SELECT pst_path IS NULL, status, error IS NOT NULL FROM delete_pst_messages(
+  (SELECT NULL::VARCHAR, 2097188::UINTEGER))
+----
+true	FAILED	true
+
+query II
+SELECT status, error IS NOT NULL FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', NULL::UINTEGER))
+----
+FAILED	true
+
+# NULL in either switch is not a request to delete, and must not raise an
+# INTERNAL error, which would invalidate the database handle
+query I
+SELECT status FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER), really := NULL)
+----
+PREVIEWED
+
+statement ok
+SET pst_allow_delete = NULL
+
 statement error
 SELECT * FROM delete_pst_messages(
-  (SELECT NULL::VARCHAR, 2097188::UINTEGER), really := true)
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER), really := true)
 ----
-<REGEX>:.*NULL.*
+<REGEX>:.*is disabled.*
+
+statement ok
+SET pst_allow_delete = true
+
+# A node the mode has no business deleting is refused, per row. pstsdk takes a
+# raw nid and does no type check, so this is the only thing between an agent
+# and the store's root
+query II
+SELECT node_id, status FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 290::UINTEGER
+    UNION ALL SELECT 'test/unittest.pst', 33::UINTEGER
+    UNION ALL SELECT 'test/unittest.pst', 32898::UINTEGER), really := true)
+ORDER BY node_id
+----
+33	FAILED
+290	FAILED
+32898	FAILED
+
+query II
+SELECT node_id, status FROM delete_pst_folders(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER), really := true)
+----
+2097188	FAILED
+
+# A statement prepared while the gate was on must not stay a working delete
+# after RESET: EXECUTE reuses the bind data, so bind alone cannot hold it
+statement ok
+PREPARE gated AS SELECT * FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER), really := true)
+
+statement ok
+RESET pst_allow_delete
 
 statement error
-SELECT * FROM delete_pst_messages(
-  (SELECT 'test/unittest.pst', NULL::UINTEGER), really := true)
+EXECUTE gated
 ----
-<REGEX>:.*NULL.*
+<REGEX>:.*is disabled.*
+
+statement ok
+SET pst_allow_delete = true
 
 # The shared fixture is untouched by any of the above
 query I

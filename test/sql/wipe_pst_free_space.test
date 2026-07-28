@@ -17,8 +17,9 @@ unzip test/unittest.pst.gz __TEST_DIR__/wipe.pst
 statement ok
 SET pst_allow_delete = true
 
-# Deleting a message unlinks its blocks but leaves their bytes on disk, so a
-# wipe after a delete is what actually makes the content unrecoverable
+# Deleting already zeroes the blocks it releases, so what a wipe adds is
+# everything the store is not using, including space an earlier client freed
+# without clearing it
 query I
 SELECT status FROM delete_pst_messages(
   (SELECT pst_path, node_id FROM read_pst_messages('__TEST_DIR__/wipe.pst')
@@ -26,11 +27,35 @@ SELECT status FROM delete_pst_messages(
 ----
 DELETED
 
+# The deleted subject is gone from the raw bytes before the wipe runs
+query I
+SELECT count(*) FROM read_blob('__TEST_DIR__/wipe.pst')
+  WHERE position('Test email 1' IN content::VARCHAR) > 0
+----
+0
+
+statement ok
+CREATE TABLE before_wipe AS SELECT md5(content) AS digest FROM read_blob('__TEST_DIR__/wipe.pst')
+
 query III
 SELECT pst_path, bytes_wiped > 0, status
   FROM wipe_pst_free_space('__TEST_DIR__/wipe.pst', really := true)
 ----
 __TEST_DIR__/wipe.pst	true	DELETED
+
+# The wipe has to actually write. A no-op that reports a byte count and touches
+# nothing passes every other assertion in this file
+query I
+SELECT count(*) FROM before_wipe b, read_blob('__TEST_DIR__/wipe.pst') f
+  WHERE b.digest = md5(f.content)
+----
+0
+
+# and it must not resize the store
+query I
+SELECT octet_length(content) FROM read_blob('__TEST_DIR__/wipe.pst')
+----
+2302976
 
 # The store still reads, which is the assertion that matters: a wipe that
 # clobbered a live block would take the whole file with it
