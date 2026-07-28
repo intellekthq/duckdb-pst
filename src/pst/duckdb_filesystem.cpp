@@ -24,6 +24,13 @@ dfile::dfile(ClientContext &ctx, const OpenFileInfo &file, bool writable)
 size_t dfile::read(std::vector<pstsdk::byte> &buffer,
                    pstsdk::ulonglong offset) const {
   idx_t read_size = buffer.size();
+
+  // pstsdk::file documents out_of_range past EOF, and
+  // db_writer::looks_like_page catches it to reject a candidate page address.
+  // An IOException there aborts a whole wipe instead
+  if (offset + read_size > (pstsdk::ulonglong)file_handle->GetFileSize())
+    throw std::out_of_range("dfile::read past end of file");
+
   file_handle->Read(&buffer.data()[0], read_size, offset);
   return read_size;
 }

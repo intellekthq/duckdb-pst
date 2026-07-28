@@ -138,6 +138,8 @@ Deletion is **disabled by default**. Both switches are required:
 
 Without `really`, the call previews: it opens the store read-only, resolves every target, and reports `PREVIEWED` or `FAILED` per row. Previews are not gated, and `bytes_wiped` on a previewed wipe is `NULL`.
 
+**Note:** DuckDB does not enforce the declared scope of an extension setting, so `SET GLOBAL pst_allow_delete = true` arms every connection on the database and a plain `RESET` only clears the connection that ran it. Set it per session, and treat a pooled connection as already armed if anything in the process ever set it globally.
+
 | Table Function            | Input Table                                                                 | Deletes                                         |
 |---------------------------|-----------------------------------------------------------------------------|-------------------------------------------------|
 | `delete_pst_messages`     | `(pst_path VARCHAR, node_id UINTEGER)`                                      | One message, and its attachments                |
