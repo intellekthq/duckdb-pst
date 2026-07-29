@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Added in-place deletion: `delete_pst_messages`, `delete_pst_folders`, `delete_pst_attachments` and `wipe_pst_free_space`
+  - Gated behind `SET pst_allow_delete = true` and a per-call `really := true`; without `really` the call previews
+  - Targets come from a nested read; the input table is positional and checked at bind time
+  - Node IDs are checked against the mode, so `delete_pst_messages` refuses a folder or the store's root
+  - Bind errors abort the statement, everything later is reported per row as `FAILED`
+  - Paths carrying a scheme other than `file://` are refused
+- Added `node_id` attachment struct field, the subnode ID taken by `delete_pst_attachments`
+- Fixed `recipients` and `attachments` returning `NULL` instead of an empty list for messages that have none
 - Registered `PSTFilterOptimizer` in `LoadInternal` rather than `Extension::Load`; the loadable build enters through `DUCKDB_CPP_EXTENSION_ENTRY` and never calls `Load`, so `LOAD pst` had no filter optimizer
 
 ## [0.1.3] - 2026-04-12

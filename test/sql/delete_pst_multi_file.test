@@ -1,0 +1,103 @@
+# name: test/sql/delete_pst_multi_file.test
+# description: Test deletes spanning several stores, and per file failures
+# group: [sql]
+
+require pst
+
+# Not enable_verification: it runs every statement five or six times, so a
+# delete would land once and then fail as FAILED on every repeat
+statement ok
+PRAGMA disable_verification
+
+statement ok
+load pst;
+
+unzip test/unittest.pst.gz __TEST_DIR__/one.pst
+
+unzip test/unittest.pst.gz __TEST_DIR__/two.pst
+
+statement ok
+SET pst_allow_delete = true
+
+# Targets arrive interleaved across files and are bucketed per store. Applying
+# one file's targets to another would be invisible to a single file test
+query II
+SELECT pst_path, count(*) FROM delete_pst_messages(
+  (SELECT '__TEST_DIR__/one.pst', 2097188::UINTEGER
+    UNION ALL SELECT '__TEST_DIR__/two.pst', 2097220::UINTEGER
+    UNION ALL SELECT '__TEST_DIR__/one.pst', 2097252::UINTEGER
+    UNION ALL SELECT '__TEST_DIR__/two.pst', 2097284::UINTEGER), really := true)
+WHERE status = 'DELETED'
+GROUP BY pst_path ORDER BY pst_path
+----
+__TEST_DIR__/one.pst	2
+__TEST_DIR__/two.pst	2
+
+# Each store lost exactly the nodes it was given, not the other's
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/one.pst')
+  WHERE node_id IN (2097188, 2097252)
+----
+0
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/one.pst')
+  WHERE node_id IN (2097220, 2097284)
+----
+2
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/two.pst')
+  WHERE node_id IN (2097220, 2097284)
+----
+0
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/two.pst')
+  WHERE node_id IN (2097188, 2097252)
+----
+2
+
+# A file that cannot be opened fails its own targets and does not stop the
+# others. Reporting DELETED here would tell a caller a store was scrubbed when
+# it was never opened
+query III
+SELECT pst_path, status, error IS NOT NULL FROM delete_pst_messages(
+  (SELECT '__TEST_DIR__/one.pst', 2097316::UINTEGER
+    UNION ALL SELECT '__TEST_DIR__/missing.pst', 2097188::UINTEGER),
+  really := true)
+ORDER BY pst_path
+----
+__TEST_DIR__/missing.pst	FAILED	true
+__TEST_DIR__/one.pst	DELETED	false
+
+# A file that exists but is not a PST fails the same way
+statement ok
+COPY (SELECT 1 AS x) TO '__TEST_DIR__/notapst.pst' (FORMAT CSV)
+
+query II
+SELECT status, error IS NOT NULL FROM delete_pst_messages(
+  (SELECT '__TEST_DIR__/notapst.pst', 2097188::UINTEGER), really := true)
+----
+FAILED	true
+
+# Results spool across chunks. Everything else in these suites returns a
+# handful of rows, so the STANDARD_VECTOR_SIZE boundary is never crossed
+query II
+SELECT count(*), count(DISTINCT node_id) FROM delete_pst_messages(
+  (SELECT '__TEST_DIR__/one.pst', (900000 + i)::UINTEGER FROM range(3000) t(i)))
+----
+3000	3000
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/one.pst')
+----
+9
+
+# A glob reaches every store it matches, and the file that is not a PST fails
+# on its own without taking the other two with it
+query II
+SELECT count(*), sum(CASE WHEN status = 'DELETED' THEN 1 ELSE 0 END)
+  FROM wipe_pst_free_space('__TEST_DIR__/*.pst', really := true)
+----
+3	2

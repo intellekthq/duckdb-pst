@@ -1,0 +1,85 @@
+# name: test/sql/delete_pst_attachments.test
+# description: Test delete_pst_attachments, which leaves the message in place
+# group: [sql]
+
+require pst
+
+# Not enable_verification: it runs every statement five or six times, so a
+# delete would land once and then fail as FAILED on every repeat
+statement ok
+PRAGMA disable_verification
+
+statement ok
+load pst;
+
+unzip test/unittest.pst.gz __TEST_DIR__/attachments.pst
+
+statement ok
+SET pst_allow_delete = true
+
+# node_id on the attachment struct is the subnode id this function takes, and
+# the only stable handle on one attachment
+query III
+SELECT m.node_id, a.node_id, a.filename
+  FROM read_pst_messages('__TEST_DIR__/attachments.pst') m, UNNEST(m.attachments) t(a)
+----
+2097284	32805	MEDIUM~2.JPG
+
+query III
+SELECT node_id, has_attachments, attachment_count
+  FROM read_pst_messages('__TEST_DIR__/attachments.pst') WHERE node_id = 2097284
+----
+2097284	true	1
+
+query IIIII
+SELECT * FROM delete_pst_attachments(
+  (SELECT m.pst_path, m.node_id, a.node_id
+     FROM read_pst_messages('__TEST_DIR__/attachments.pst') m,
+          UNNEST(m.attachments) t(a)), really := true)
+----
+__TEST_DIR__/attachments.pst	2097284	32805	DELETED	NULL
+
+# The message stays, and the flag flips because that was the last attachment
+query III
+SELECT node_id, has_attachments, attachment_count
+  FROM read_pst_messages('__TEST_DIR__/attachments.pst') WHERE node_id = 2097284
+----
+2097284	false	0
+
+query I
+SELECT len(attachments) FROM read_pst_messages('__TEST_DIR__/attachments.pst')
+  WHERE node_id = 2097284
+----
+0
+
+# Nothing else moved
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/attachments.pst')
+----
+12
+
+query I
+SELECT count(*) FROM read_pst_folders('__TEST_DIR__/attachments.pst')
+----
+16
+
+# An attachment that is already gone fails, and so does one under a message
+# that never had any
+query I
+SELECT status FROM delete_pst_attachments(
+  (SELECT '__TEST_DIR__/attachments.pst', 2097284::UINTEGER, 32805::UINTEGER),
+  really := true)
+----
+FAILED
+
+query I
+SELECT status FROM delete_pst_attachments(
+  (SELECT '__TEST_DIR__/attachments.pst', 2097188::UINTEGER, 32805::UINTEGER),
+  really := true)
+----
+FAILED
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/attachments.pst')
+----
+12

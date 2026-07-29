@@ -1,0 +1,123 @@
+# name: test/sql/wipe_pst_free_space.test
+# description: Test wipe_pst_free_space, which clears bytes no node points at
+# group: [sql]
+
+require pst
+
+# Not enable_verification: it runs every statement five or six times, and only
+# the first wipe has anything left to clear
+statement ok
+PRAGMA disable_verification
+
+statement ok
+load pst;
+
+unzip test/unittest.pst.gz __TEST_DIR__/wipe.pst
+
+statement ok
+SET pst_allow_delete = true
+
+# Deleting already zeroes the blocks it releases, so what a wipe adds is
+# everything the store is not using, including space an earlier client freed
+# without clearing it
+query I
+SELECT status FROM delete_pst_messages(
+  (SELECT pst_path, node_id FROM read_pst_messages('__TEST_DIR__/wipe.pst')
+    WHERE node_id = 2097188), really := true)
+----
+DELETED
+
+# The deleted subject is gone from the raw bytes before the wipe runs
+query I
+SELECT count(*) FROM read_blob('__TEST_DIR__/wipe.pst')
+  WHERE position('Test email 1' IN content::VARCHAR) > 0
+----
+0
+
+statement ok
+CREATE TABLE before_wipe AS SELECT md5(content) AS digest FROM read_blob('__TEST_DIR__/wipe.pst')
+
+query III
+SELECT pst_path, bytes_wiped > 0, status
+  FROM wipe_pst_free_space('__TEST_DIR__/wipe.pst', really := true)
+----
+__TEST_DIR__/wipe.pst	true	DELETED
+
+# The wipe has to actually write. A no-op that reports a byte count and touches
+# nothing passes every other assertion in this file
+query I
+SELECT count(*) FROM before_wipe b, read_blob('__TEST_DIR__/wipe.pst') f
+  WHERE b.digest = md5(f.content)
+----
+0
+
+# and it must not resize the store
+query I
+SELECT octet_length(content) FROM read_blob('__TEST_DIR__/wipe.pst')
+----
+2302976
+
+# The store still reads, which is the assertion that matters: a wipe that
+# clobbered a live block would take the whole file with it
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/wipe.pst')
+----
+11
+
+query I
+SELECT count(*) FROM read_pst_folders('__TEST_DIR__/wipe.pst')
+----
+16
+
+query I
+SELECT message_count FROM read_pst_folders('__TEST_DIR__/wipe.pst')
+  WHERE display_name = 'Inbox'
+----
+3
+
+query I
+SELECT count(*) FROM read_pst_notes('__TEST_DIR__/wipe.pst')
+----
+4
+
+query I
+SELECT count(*) FROM read_pst_contacts('__TEST_DIR__/wipe.pst')
+----
+2
+
+# Content of the messages that stayed is still intact, not just their nodes.
+# Subjects carry the [MS-PST] prefix control bytes, hence the substr
+query II
+SELECT node_id, substr(subject, 3) FROM read_pst_notes('__TEST_DIR__/wipe.pst')
+ORDER BY node_id
+----
+2097220	Test email 2
+2097252	Test email 3
+2097284	Test email 4
+2097540	Test email
+
+# A second wipe is safe to run. bytes_wiped counts free bytes overwritten, not
+# bytes that changed, so it reports the same total rather than zero
+query II
+SELECT bytes_wiped > 0, status
+  FROM wipe_pst_free_space('__TEST_DIR__/wipe.pst', really := true)
+----
+true	DELETED
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/wipe.pst')
+----
+11
+
+# Deleting after a wipe still works, so the wipe left the allocation maps in a
+# state the writer can pick back up
+query I
+SELECT status FROM delete_pst_messages(
+  (SELECT '__TEST_DIR__/wipe.pst', 2097220::UINTEGER), really := true)
+----
+DELETED
+
+query I
+SELECT count(*) FROM read_pst_messages('__TEST_DIR__/wipe.pst')
+----
+10

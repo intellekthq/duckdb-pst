@@ -6,6 +6,8 @@
 
 A DuckDB extension for reading [Microsoft PST files](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546) with rich schemas for common MAPI types, built on Microsoft's official PST SDK. Query emails, contacts, appointments (and others). Use it to analyze PST data in-place (locally, or on object storage), import to DuckDB tables, or export to Parquet.
 
+It can also [delete](#deleting) from a PST in place: scrub PII, drop out-of-scope custodian mail before a production, or strip attachments.
+
 ## Getting Started
 
 Quickly count all messages or folders in a directory full of PSTs (171 files, 77.4 GiB):
@@ -120,6 +122,92 @@ All table functions accept the following named parameters. Note that **by defaul
 | `read_attachment_body` | `false`      | Whether to read attachment bytes into the `bytes` field                            |
 | `read_limit`           | `NULL`       | Maximum number of items to read (applied during planning, stops crawling fs)       |
 | `planning_concurrency` | `UINT32_MAX` | Maximum concurrent async tasks during partition planning (applies when globbing multiple PST files). |
+
+## Deleting
+
+The delete functions edit a PST in place. There is no copy, no temporary file, no transaction and no rollback, so a delete cannot be undone. Freed blocks are zeroed on the way out, so what you delete is gone rather than just unreachable.
+
+The file does not shrink. Freed space goes back to the store's own allocator for the next write, not to the filesystem.
+
+Deletion is **disabled by default**. Both switches are required:
+
+| Switch                        | Scope   | Effect                                              |
+|-------------------------------|---------|-----------------------------------------------------|
+| `SET pst_allow_delete = true` | Session | Permits `really := true`                            |
+| `really := true`              | Call    | Deletes, instead of previewing                      |
+
+Without `really`, the call previews: it opens the store read-only, resolves every target, and reports `PREVIEWED` or `FAILED` per row. Previews are not gated, and `bytes_wiped` on a previewed wipe is `NULL`.
+
+**Note:** DuckDB does not enforce the declared scope of an extension setting. `SET GLOBAL pst_allow_delete = true` therefore arms every connection on the database, and a plain `RESET` clears only the connection that ran it. Set it per session, and assume a pooled connection is already armed if anything in the process ever set it globally.
+
+| Table Function            | Input Table                                                                 | Deletes                                         |
+|---------------------------|-----------------------------------------------------------------------------|-------------------------------------------------|
+| `delete_pst_messages`     | `(pst_path VARCHAR, node_id UINTEGER)`                                      | One message, and its attachments                |
+| `delete_pst_folders`      | `(pst_path VARCHAR, node_id UINTEGER)`                                      | A folder, its subfolders and everything in them |
+| `delete_pst_attachments`  | `(pst_path VARCHAR, message_node_id UINTEGER, attachment_node_id UINTEGER)` | One attachment, leaving the message             |
+| `wipe_pst_free_space`     | a path or glob, not a table                                                 | Overwrites bytes no node points at              |
+
+There are no per message-class delete functions; filter by class in the subquery.
+
+Targets come from a nested read. The input table is positional:
+
+```sql
+set pst_allow_delete = true;
+
+select * from delete_pst_messages(
+  (select pst_path, node_id from read_pst_messages('/tmp/doc/hr.pst')
+    where message_class = 'IPM.Contact'), really := true);
+```
+
+```
+┌─────────────────┬─────────┬─────────┬───────┐
+│    pst_path     │ node_id │ status  │ error │
+├─────────────────┼─────────┼─────────┼───────┤
+│ /tmp/doc/hr.pst │ 2097380 │ DELETED │ NULL  │
+│ /tmp/doc/hr.pst │ 2097348 │ DELETED │ NULL  │
+└─────────────────┴─────────┴─────────┴───────┘
+```
+
+The arity and types are checked when the statement is bound. `SELECT *` inside a delete is refused: it would materialize every column, bodies and attachment blobs included. Node IDs are checked too, so a folder ID handed to `delete_pst_messages` comes back `FAILED` rather than taking the folder.
+
+### Wiping free space
+
+`wipe_pst_free_space` overwrites every byte the store does not reference. A delete already zeroes the blocks it frees, so this one is for what earlier writers left behind: space Outlook or another client released without clearing, which is where a scrub otherwise leaves readable text.
+
+```sql
+select * from wipe_pst_free_space('/tmp/doc/hr.pst', really := true);
+```
+
+```
+┌─────────────────┬─────────────┬─────────┬───────┐
+│    pst_path     │ bytes_wiped │ status  │ error │
+├─────────────────┼─────────────┼─────────┼───────┤
+│ /tmp/doc/hr.pst │ 1934592     │ DELETED │ NULL  │
+└─────────────────┴─────────────┴─────────┴───────┘
+```
+
+`bytes_wiped` counts free bytes overwritten, not bytes that changed, so a second wipe on an unchanged store reports the same total.
+
+### Errors
+
+`status` is `PREVIEWED`, `DELETED` or `FAILED`, and `error` carries the reason.
+
+Errors found at bind time abort the statement: the gate being off, or a wrong column count or type. Everything found later is reported per row. A `UNION ALL` input runs as several pipelines that DuckDB finalizes separately, so an earlier pipeline may already have committed deletes by the time a bad row turns up, and throwing would take the record of them with it.
+
+```sql
+select status, count(*) from delete_pst_messages(
+  (select pst_path, node_id from read_pst_messages('archive/*.pst')
+    where body ilike '%SSN%'), really := true)
+group by status;
+```
+
+A store that reports corruption or a write error abandons the rest of that file's targets. Other files in the same call continue.
+
+Run a delete as its own statement. Deleting from a file the same query reads in another branch is unsupported and undetectable, and `LIMIT 0` on the outer query can skip the finalize pass entirely, deleting nothing.
+
+A read binds its own view of the store, so re-`EXECUTE` of a statement prepared before a delete returns pre-delete results until it is prepared again.
+
+**Note:** paths carrying a scheme other than `file://` are refused. Object storage has no in place edit: writing the file back stores a new version, and the original, which still holds the data you were trying to destroy, stays in the bucket. Copy the file to local disk, delete from it there, and upload the result.
 
 ## Schemas
 
@@ -383,6 +471,7 @@ Used in the `attachments` field. Each attachment contains:
 
 | Field                | Type       | Description                                                          |
 |----------------------|------------|----------------------------------------------------------------------|
+| `node_id`            | `UINTEGER` | Attachment subnode ID, taken by `delete_pst_attachments`             |
 | `filename`           | `VARCHAR`  | Attachment filename                                                  |
 | `mime_type`          | `VARCHAR`  | MIME type of the attachment                                          |
 | `size`               | `UBIGINT`  | Attachment size in bytes                                             |

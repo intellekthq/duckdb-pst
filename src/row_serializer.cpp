@@ -123,6 +123,11 @@ duckdb::Value into_struct(PSTReadLocalState &local_state, const LogicalType &t,
     auto &col_type = StructType::GetChildType(t, col);
 
     switch (col) {
+    // The subnode id delete_pst_attachments takes, and the only stable handle
+    // on one attachment: an ordinal shifts as soon as a sibling goes
+    case static_cast<int>(schema::AttachmentProjection::node_id):
+      values[col] = Value::UINTEGER(attachment_prop_bag.get_node().get_id());
+      break;
     case static_cast<int>(schema::AttachmentProjection::attach_content_id):
       values[col] = from_prop<std::string>(col_type, attachment_prop_bag,
                                            PR_ATTACH_CONTENT_ID);
@@ -374,15 +379,21 @@ void set_output_column(PSTReadLocalState &local_state,
     break;
   case static_cast<int>(schema::NoteProjection::recipients): {
     vector<Value> recipients;
-    for (auto it = msg.recipient_begin(); it != msg.recipient_end(); ++it) {
-      try {
-        recipients.emplace_back(
-            into_struct(local_state, schema::RECIPIENT_SCHEMA, *it));
-      } catch (std::exception &e) {
-        DUCKDB_LOG_ERROR(local_state.ec,
-                         "Unable to serialize recipient struct: %s", e.what());
-        recipients.emplace_back(Value(nullptr));
+    // A message with no recipients has no recipient table at all, and the
+    // iterator throws rather than coming back empty
+    try {
+      for (auto it = msg.recipient_begin(); it != msg.recipient_end(); ++it) {
+        try {
+          recipients.emplace_back(
+              into_struct(local_state, schema::RECIPIENT_SCHEMA, *it));
+        } catch (std::exception &e) {
+          DUCKDB_LOG_ERROR(local_state.ec,
+                           "Unable to serialize recipient struct: %s",
+                           e.what());
+          recipients.emplace_back(Value(nullptr));
+        }
       }
+    } catch (pstsdk::key_not_found<pstsdk::node_id> &) {
     }
     output.SetValue(column_index, row_number,
                     Value::LIST(schema::RECIPIENT_SCHEMA, recipients));
@@ -390,15 +401,21 @@ void set_output_column(PSTReadLocalState &local_state,
   }
   case static_cast<int>(schema::NoteProjection::attachments): {
     vector<Value> attachments;
-    for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
-      try {
-        attachments.emplace_back(
-            into_struct(local_state, schema::ATTACHMENT_SCHEMA, *it));
-      } catch (std::exception &e) {
-        DUCKDB_LOG_ERROR(local_state.ec,
-                         "Unable to serialize attachment struct: %s", e.what());
-        attachments.emplace_back(Value(nullptr));
+    // Same as recipients: no attachment table means the iterator throws, and
+    // UNNEST(attachments) is how a caller feeds delete_pst_attachments
+    try {
+      for (auto it = msg.attachment_begin(); it != msg.attachment_end(); ++it) {
+        try {
+          attachments.emplace_back(
+              into_struct(local_state, schema::ATTACHMENT_SCHEMA, *it));
+        } catch (std::exception &e) {
+          DUCKDB_LOG_ERROR(local_state.ec,
+                           "Unable to serialize attachment struct: %s",
+                           e.what());
+          attachments.emplace_back(Value(nullptr));
+        }
       }
+    } catch (pstsdk::key_not_found<pstsdk::node_id> &) {
     }
 
     output.SetValue(column_index, row_number,

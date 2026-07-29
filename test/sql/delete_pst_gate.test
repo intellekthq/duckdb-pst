@@ -1,0 +1,210 @@
+# name: test/sql/delete_pst_gate.test
+# description: Test the pst_allow_delete gate and the delete input table contract
+# group: [sql]
+
+require pst
+
+statement ok
+PRAGMA enable_verification
+
+statement ok
+load pst;
+
+# The gate is off unless the session turns it on
+query I
+SELECT current_setting('pst_allow_delete')
+----
+false
+
+# A preview needs no gate, because it writes nothing
+query IIII
+SELECT * FROM delete_pst_messages(
+  (SELECT pst_path, node_id FROM read_pst_notes('test/unittest.pst')
+    WHERE node_id = 2097188))
+----
+test/unittest.pst	2097188	PREVIEWED	NULL
+
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT pst_path, node_id FROM read_pst_notes('test/unittest.pst')), really := true)
+----
+<REGEX>:.*delete_pst_messages is disabled.*SET pst_allow_delete = true.*
+
+statement error
+SELECT * FROM delete_pst_folders(
+  (SELECT pst_path, node_id FROM read_pst_folders('test/unittest.pst')), really := true)
+----
+<REGEX>:.*delete_pst_folders is disabled.*
+
+statement error
+SELECT * FROM delete_pst_attachments(
+  (SELECT m.pst_path, m.node_id, a.node_id
+     FROM read_pst_messages('test/unittest.pst') m, UNNEST(m.attachments) t(a)),
+  really := true)
+----
+<REGEX>:.*delete_pst_attachments is disabled.*
+
+statement error
+SELECT * FROM wipe_pst_free_space('test/unittest.pst', really := true)
+----
+<REGEX>:.*wipe_pst_free_space is disabled.*
+
+statement ok
+SET pst_allow_delete = true
+
+query I
+SELECT current_setting('pst_allow_delete')
+----
+true
+
+# RESET puts the gate back, so enabling it for one statement cannot leak
+statement ok
+RESET pst_allow_delete
+
+query I
+SELECT current_setting('pst_allow_delete')
+----
+false
+
+statement ok
+SET pst_allow_delete = true
+
+# SELECT * inside a delete reads every column and discards all but two, so bind
+# refuses it and names what it wanted instead
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT * FROM read_pst_notes('test/unittest.pst')), really := true)
+----
+<REGEX>:.*exactly 2 columns.*pst_path VARCHAR, node_id UINTEGER.*received 27.*
+
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT pst_path FROM read_pst_notes('test/unittest.pst')), really := true)
+----
+<REGEX>:.*exactly 2 columns.*received 1.*
+
+statement error
+SELECT * FROM delete_pst_attachments(
+  (SELECT pst_path, node_id FROM read_pst_messages('test/unittest.pst')), really := true)
+----
+<REGEX>:.*exactly 3 columns.*received 2.*
+
+# Reversed columns are the mistake a caller is most likely to make, and both
+# orders bind as two columns, so the type check is what catches it
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT node_id, pst_path FROM read_pst_notes('test/unittest.pst')), really := true)
+----
+<REGEX>:.*column 1 \(pst_path\) is UINTEGER.*cannot be read as VARCHAR.*
+
+# A literal still binds, because bind rewrites input_table_types and DuckDB
+# inserts the casts
+query IIII
+SELECT * FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER WHERE false))
+----
+
+# Object storage has no in place edit, and writing the file back would leave
+# the original, still holding what the caller wanted destroyed, in the bucket
+statement error
+SELECT * FROM wipe_pst_free_space('s3://bucket/x.pst', really := true)
+----
+<REGEX>:.*local file.*
+
+# Per row rather than thrown: a UNION ALL input is several pipelines, and by
+# the time a bad row is seen another pipeline's finalize may already have
+# committed deletes the caller would never hear about
+query II
+SELECT status, error LIKE '%local file%' FROM delete_pst_messages(
+  (SELECT 's3://bucket/x.pst', 2097188::UINTEGER), really := true)
+----
+FAILED	true
+
+# Case, and any scheme a host registered, not just the ones DuckDB lists
+query I
+SELECT status FROM delete_pst_messages(
+  (SELECT 'S3://bucket/x.pst', 2097188::UINTEGER), really := true)
+----
+FAILED
+
+query I
+SELECT status FROM delete_pst_messages(
+  (SELECT 'abfs://acct/x.pst', 2097188::UINTEGER), really := true)
+----
+FAILED
+
+# A good target in the same call still lands, and is still reported
+query III
+SELECT pst_path IS NULL, status, error IS NOT NULL FROM delete_pst_messages(
+  (SELECT NULL::VARCHAR, 2097188::UINTEGER))
+----
+true	FAILED	true
+
+query II
+SELECT status, error IS NOT NULL FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', NULL::UINTEGER))
+----
+FAILED	true
+
+# NULL in either switch is not a request to delete, and must not raise an
+# INTERNAL error, which would invalidate the database handle
+query I
+SELECT status FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER), really := NULL)
+----
+PREVIEWED
+
+statement ok
+SET pst_allow_delete = NULL
+
+statement error
+SELECT * FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER), really := true)
+----
+<REGEX>:.*is disabled.*
+
+statement ok
+SET pst_allow_delete = true
+
+# A node the mode has no business deleting is refused, per row. pstsdk takes a
+# raw nid and does no type check, so this is the only thing between an agent
+# and the store's root
+query II
+SELECT node_id, status FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 290::UINTEGER
+    UNION ALL SELECT 'test/unittest.pst', 33::UINTEGER
+    UNION ALL SELECT 'test/unittest.pst', 32898::UINTEGER), really := true)
+ORDER BY node_id
+----
+33	FAILED
+290	FAILED
+32898	FAILED
+
+query II
+SELECT node_id, status FROM delete_pst_folders(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER), really := true)
+----
+2097188	FAILED
+
+# A statement prepared while the gate was on must not stay a working delete
+# after RESET: EXECUTE reuses the bind data, so bind alone cannot hold it
+statement ok
+PREPARE gated AS SELECT * FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER), really := true)
+
+statement ok
+RESET pst_allow_delete
+
+statement error
+EXECUTE gated
+----
+<REGEX>:.*is disabled.*
+
+statement ok
+SET pst_allow_delete = true
+
+# The shared fixture is untouched by any of the above
+query I
+SELECT count(*) FROM read_pst_messages('test/unittest.pst')
+----
+12

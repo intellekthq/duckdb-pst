@@ -20,8 +20,10 @@ public:
    *
    * @param fs DuckDB filesystem
    * @param file DuckDB file info
+   * @param writable Open for update, so the store can be edited in place
    */
-  dfile(duckdb::ClientContext &ctx, const duckdb::OpenFileInfo &file);
+  dfile(duckdb::ClientContext &ctx, const duckdb::OpenFileInfo &file,
+        bool writable = false);
 
   /**
    * @brief Construct a new shared "dfile"
@@ -32,6 +34,21 @@ public:
    */
   static std::shared_ptr<pstsdk::file> open(duckdb::ClientContext &ctx,
                                             const duckdb::OpenFileInfo &finfo);
+
+  /**
+   * @brief Construct a new shared "dfile" opened for in place editing
+   *
+   * @param ctx
+   * @param finfo
+   * @return std::shared_ptr<dfile>
+   */
+  static std::shared_ptr<dfile>
+  open_writable(duckdb::ClientContext &ctx, const duckdb::OpenFileInfo &finfo);
+
+  /**
+   * @brief Flush this handle, before a delete is reported as done
+   */
+  void sync();
 
   size_t read(std::vector<pstsdk::byte> &buffer,
               pstsdk::ulonglong offset) const override;
