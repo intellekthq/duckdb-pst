@@ -41,6 +41,61 @@ static bool remote_path(const string &path) {
   return !StringUtil::CIEquals(path.substr(0, scheme_end), "file");
 }
 
+// Enough of the input table to recognise, without pasting 27 column names
+static const idx_t ERROR_COLUMN_LIMIT = 6;
+
+/**
+ * @brief Render an input table's columns for an error message
+ *
+ * @param names The child's column names
+ */
+static string column_list(const vector<string> &names) {
+  if (names.size() <= ERROR_COLUMN_LIMIT)
+    return StringUtil::Join(names, ", ");
+
+  vector<string> head(names.begin(), names.begin() + ERROR_COLUMN_LIMIT);
+  return StringUtil::Format("%s, ... (%llu more)", StringUtil::Join(head, ", "),
+                            names.size() - ERROR_COLUMN_LIMIT);
+}
+
+/**
+ * @brief Whether every column the mode needs is present by name
+ *
+ * @param names The child's column names
+ * @param want The names this mode's contract calls for
+ */
+static bool has_columns(const vector<string> &names,
+                        const vector<string> &want) {
+  for (auto &needed : want) {
+    bool found = false;
+    for (auto &name : names)
+      found = found || StringUtil::CIEquals(name, needed);
+
+    if (!found)
+      return false;
+  }
+
+  return true;
+}
+
+/**
+ * @brief Whether the input's types are this mode's contract, reversed
+ *
+ * @param got The child's column types
+ * @param want The types this mode's contract calls for
+ */
+static bool reversed_columns(const vector<LogicalType> &got,
+                             const vector<LogicalType> &want) {
+  if (got.size() != want.size())
+    return false;
+
+  for (idx_t i = 0; i < want.size(); i++)
+    if (got[i] != want[want.size() - 1 - i])
+      return false;
+
+  return true;
+}
+
 // PSTDeleteTableFunctionData
 
 PSTDeleteTableFunctionData::PSTDeleteTableFunctionData(
@@ -122,25 +177,46 @@ void PSTDeleteTableFunctionData::bind_input_table_schema(
 
   // A SELECT * here would bind every column of the nested read and then throw
   // the bodies and attachment blobs away, so refuse it rather than do it
-  if (input.input_table_types.size() != want.size())
+  if (input.input_table_types.size() != want.size()) {
+    string hint =
+        StringUtil::Format("The input table must be (%s).", signature);
+
+    // The columns are usually right there, so say what to wrap rather than
+    // making the caller work it out from a column count
+    if (has_columns(input.input_table_names, want_names))
+      hint = StringUtil::Format(
+          "Those columns are in the input already, so project just them: "
+          "SELECT %s FROM ...",
+          StringUtil::Join(want_names, ", "));
+
     throw InvalidInputException(
-        "%s expects an input table of exactly %llu columns (%s), but received "
-        "%llu. Project the columns explicitly, for example: SELECT * FROM "
-        "%s((SELECT %s FROM read_pst_messages('x.pst') WHERE ...))",
+        "%s takes an input table of %llu columns (%s), but received %llu: %s. "
+        "%s",
         function_name, want.size(), signature, input.input_table_types.size(),
-        function_name, StringUtil::Join(want_names, ", "));
+        column_list(input.input_table_names), hint);
+  }
 
   for (idx_t i = 0; i < want.size(); i++) {
     if (input.input_table_types[i] == want[i])
       continue;
 
     if (CastFunctionSet::ImplicitCastCost(ctx, input.input_table_types[i],
-                                          want[i]) < 0)
+                                          want[i]) >= 0)
+      continue;
+
+    // Swapping the columns is the easiest mistake to make here, and both
+    // orders have the right arity, so name it rather than report a bad cast
+    if (reversed_columns(input.input_table_types, want))
       throw InvalidInputException(
-          "%s column %llu (%s) is %s, which cannot be read as %s. The input "
-          "table must be (%s)",
-          function_name, i + 1, want_names[i],
-          input.input_table_types[i].ToString(), want[i].ToString(), signature);
+          "%s received its input columns in the wrong order. The input table "
+          "must be (%s)",
+          function_name, signature);
+
+    throw InvalidInputException(
+        "%s column %llu (%s) is %s, which cannot be read as %s. The input "
+        "table must be (%s)",
+        function_name, i + 1, want_names[i],
+        input.input_table_types[i].ToString(), want[i].ToString(), signature);
   }
 
   // Rewriting these makes DuckDB insert the casts, so an INTEGER literal or a
@@ -166,9 +242,9 @@ static void check_gate(ClientContext &ctx, const string &function_name) {
     return;
 
   throw InvalidInputException(
-      "%s is disabled. Deleting from a PST edits the file in place and cannot "
-      "be undone. Enable it with SET pst_allow_delete = true, then pass "
-      "really := true to delete rather than preview.",
+      "%s is disabled. It edits the PST in place and cannot be undone, so it "
+      "needs SET pst_allow_delete = true first. Drop really := true to preview "
+      "what this would do, which needs no setting and writes nothing.",
       function_name);
 }
 
@@ -244,6 +320,50 @@ void PSTDeleteGlobalState::buffer_failure(const string &path,
 }
 
 /**
+ * @brief Name a node type, so an error can say what the caller actually passed
+ *
+ * @param type From get_nid_type
+ */
+static const char *nid_type_name(pstsdk::nid_type type) {
+  switch (type) {
+  case pstsdk::nid_type_folder:
+    return "folder";
+  case pstsdk::nid_type_search_folder:
+    return "search folder";
+  case pstsdk::nid_type_message:
+    return "message";
+  case pstsdk::nid_type_associated_message:
+    return "associated message";
+  case pstsdk::nid_type_attachment:
+    return "attachment";
+  case pstsdk::nid_type_internal:
+    return "store internal node";
+  default:
+    return "node the delete functions do not handle";
+  }
+}
+
+/**
+ * @brief The function that would have taken this node, when there is one
+ *
+ * @param type From get_nid_type
+ */
+static const char *suggested_function(pstsdk::nid_type type) {
+  switch (type) {
+  case pstsdk::nid_type_folder:
+  case pstsdk::nid_type_search_folder:
+    return " Use delete_pst_folders.";
+  case pstsdk::nid_type_message:
+  case pstsdk::nid_type_associated_message:
+    return " Use delete_pst_messages.";
+  case pstsdk::nid_type_attachment:
+    return " Use delete_pst_attachments, which also needs the owning message.";
+  default:
+    return "";
+  }
+}
+
+/**
  * @brief Refuse a node the mode has no business deleting
  *
  * pstsdk's delete calls take a raw nid and do no type check, so without this
@@ -255,20 +375,22 @@ void PSTDeleteGlobalState::buffer_failure(const string &path,
 static void check_deletable(PSTDeleteFunctionMode mode, node_id nid) {
   if (nid == pstsdk::nid_message_store || nid == pstsdk::nid_root_folder)
     throw InvalidInputException(
-        "refusing to delete node %u, which is the store's root", nid);
+        "refusing to delete node %u: it is the store's root, and without it no "
+        "client can open the file",
+        nid);
 
   const pstsdk::nid_type type = pstsdk::get_nid_type(nid);
 
   if (mode == PSTDeleteFunctionMode::Message &&
       type != pstsdk::nid_type_message &&
       type != pstsdk::nid_type_associated_message)
-    throw InvalidInputException("node %u is not a message (nid type 0x%02x)",
-                                nid, (uint32_t)type);
+    throw InvalidInputException("node %u is a %s, not a message.%s", nid,
+                                nid_type_name(type), suggested_function(type));
 
   if (mode == PSTDeleteFunctionMode::Folder &&
       type != pstsdk::nid_type_folder && type != pstsdk::nid_type_search_folder)
-    throw InvalidInputException("node %u is not a folder (nid type 0x%02x)",
-                                nid, (uint32_t)type);
+    throw InvalidInputException("node %u is a %s, not a folder.%s", nid,
+                                nid_type_name(type), suggested_function(type));
 }
 
 void PSTDeleteGlobalState::drain_file(ClientContext &ctx, const string &path,

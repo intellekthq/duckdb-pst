@@ -75,27 +75,27 @@ statement error
 SELECT * FROM delete_pst_messages(
   (SELECT * FROM read_pst_notes('test/unittest.pst')), really := true)
 ----
-<REGEX>:.*exactly 2 columns.*pst_path VARCHAR, node_id UINTEGER.*received 27.*
+<REGEX>:.*2 columns.*received 27.*project just them: SELECT pst_path, node_id.*
 
 statement error
 SELECT * FROM delete_pst_messages(
   (SELECT pst_path FROM read_pst_notes('test/unittest.pst')), really := true)
 ----
-<REGEX>:.*exactly 2 columns.*received 1.*
+<REGEX>:.*2 columns.*received 1.*
 
 statement error
 SELECT * FROM delete_pst_attachments(
   (SELECT pst_path, node_id FROM read_pst_messages('test/unittest.pst')), really := true)
 ----
-<REGEX>:.*exactly 3 columns.*received 2.*
+<REGEX>:.*3 columns.*received 2.*
 
 # Reversed columns are the mistake a caller is most likely to make, and both
-# orders bind as two columns, so the type check is what catches it
+# orders bind as two columns, so say so rather than report a failed cast
 statement error
 SELECT * FROM delete_pst_messages(
   (SELECT node_id, pst_path FROM read_pst_notes('test/unittest.pst')), really := true)
 ----
-<REGEX>:.*column 1 \(pst_path\) is UINTEGER.*cannot be read as VARCHAR.*
+<REGEX>:.*columns in the wrong order.*
 
 # A literal still binds, because bind rewrites input_table_types and DuckDB
 # inserts the casts
@@ -185,6 +185,19 @@ SELECT node_id, status FROM delete_pst_folders(
   (SELECT 'test/unittest.pst', 2097188::UINTEGER), really := true)
 ----
 2097188	FAILED
+
+# and the error says which function would have taken it
+query I
+SELECT error FROM delete_pst_messages(
+  (SELECT 'test/unittest.pst', 32898::UINTEGER))
+----
+node 32898 is a folder, not a message. Use delete_pst_folders.
+
+query I
+SELECT error FROM delete_pst_folders(
+  (SELECT 'test/unittest.pst', 2097188::UINTEGER))
+----
+node 2097188 is a message, not a folder. Use delete_pst_messages.
 
 # A statement prepared while the gate was on must not stay a working delete
 # after RESET: EXECUTE reuses the bind data, so bind alone cannot hold it
