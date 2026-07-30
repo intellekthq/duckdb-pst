@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Bumped `microsoft-pst-sdk` to `bc1732c`, fixing non-ASCII text on macOS. `bytes_to_wstring` asked iconv for `WCHAR_T`, which follows `LC_CTYPE`, so under a C locale anything above U+007F failed to decode
+- Bumped `microsoft-pst-sdk` to `bc1732c`, fixing non-ASCII text on macOS outside a UTF-8 locale. `bytes_to_wstring` asked iconv for `WCHAR_T`, which macOS resolves through `mbrtowc` and so follows `LC_CTYPE`; with no `LANG` set, as in CI, launchd or a container, anything above U+007F failed to decode. A normal terminal session was unaffected
 - Added in-place deletion: `delete_pst_messages`, `delete_pst_folders`, `delete_pst_attachments` and `wipe_pst_free_space`
   - Gated behind `SET pst_allow_delete = true` and a per-call `really := true`; without `really` the call previews
   - Targets come from a nested read; the input table is positional and checked at bind time
