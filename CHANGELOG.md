@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-03
+
 - Bumped `microsoft-pst-sdk` to `bc1732c`, fixing non-ASCII text on macOS outside a UTF-8 locale. `bytes_to_wstring` asked iconv for `WCHAR_T`, which macOS resolves through `mbrtowc` and so follows `LC_CTYPE`; with no `LANG` set, as in CI, launchd or a container, anything above U+007F failed to decode. A normal terminal session was unaffected
 - Added in-place deletion: `delete_pst_messages`, `delete_pst_folders`, `delete_pst_attachments` and `wipe_pst_free_space`
   - Gated behind `SET pst_allow_delete = true` and a per-call `really := true`; without `really` the call previews
@@ -71,7 +73,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - macOS (x86_64, ARM64)
 - Windows (x86_64)
 
-[Unreleased]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/intellekthq/duckdb-pst/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.0...v0.1.1
