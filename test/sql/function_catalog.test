@@ -1,0 +1,37 @@
+# name: test/sql/function_catalog.test
+# description: Check catalog documentation for every PST table function
+# group: [sql]
+
+require pst
+
+statement ok
+LOAD pst;
+
+# Every registered PST function must have a description and a SQL example.
+query IIII
+SELECT count(*),
+       count(*) FILTER (WHERE description IS NOT NULL AND description <> ''),
+       count(*) FILTER (WHERE len(examples) > 0),
+       count(*) FILTER (WHERE len(categories) > 0)
+FROM duckdb_functions()
+WHERE function_name IN (
+  'read_pst_folders', 'read_pst_messages', 'read_pst_notes',
+  'read_pst_contacts', 'read_pst_appointments', 'read_pst_sticky_notes',
+  'read_pst_tasks', 'read_pst_distribution_lists',
+  'delete_pst_messages', 'delete_pst_folders',
+  'delete_pst_attachments', 'wipe_pst_free_space')
+----
+12	12	12	12
+
+# The positional arguments need names that describe what callers pass.
+query II
+SELECT count(*) FILTER (WHERE parameters[1] = 'path'),
+       count(*) FILTER (WHERE parameters[1] = 'targets')
+FROM duckdb_functions()
+WHERE function_name IN (
+  'read_pst_folders', 'read_pst_messages', 'read_pst_notes',
+  'read_pst_contacts', 'read_pst_appointments', 'read_pst_sticky_notes',
+  'read_pst_tasks', 'read_pst_distribution_lists', 'wipe_pst_free_space',
+  'delete_pst_messages', 'delete_pst_folders', 'delete_pst_attachments')
+----
+9	3
