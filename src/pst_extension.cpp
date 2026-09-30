@@ -5,13 +5,94 @@
 #endif
 
 #include "delete_function.hpp"
-#include "table_function.hpp"
-#include "pst_extension.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/table_function.hpp"
+#include "duckdb/parser/parsed_data/create_table_function_info.hpp"
+#include "pst_extension.hpp"
+#include "table_function.hpp"
 
 namespace duckdb {
 using namespace intellekt;
+
+static string ReadDescription(duckpst::PSTReadFunctionMode mode) {
+  switch (mode) {
+  case duckpst::Folder:
+    return "Read folders and their message counts from PST files.";
+  case duckpst::Message:
+    return "Read all messages from PST files with the base email fields.";
+  case duckpst::Note:
+    return "Read messages classified as notes from PST files.";
+  case duckpst::Contact:
+    return "Read contacts from PST files with contact fields.";
+  case duckpst::Appointment:
+    return "Read appointments from PST files with calendar fields.";
+  case duckpst::StickyNote:
+    return "Read sticky notes from PST files.";
+  case duckpst::Task:
+    return "Read tasks from PST files with task fields.";
+  case duckpst::DistList:
+    return "Read distribution lists from PST files with member fields.";
+  default:
+    throw InternalException("Missing PST read function description");
+  }
+}
+
+static string DeleteDescription(duckpst::PSTDeleteFunctionMode mode) {
+  switch (mode) {
+  case duckpst::PSTDeleteFunctionMode::Message:
+    return "Preview or delete PST messages and their attachments using "
+           "(pst_path, node_id) rows.";
+  case duckpst::PSTDeleteFunctionMode::Folder:
+    return "Preview or delete PST folders and their contents using "
+           "(pst_path, node_id) rows.";
+  case duckpst::PSTDeleteFunctionMode::Attachment:
+    return "Preview or delete PST attachments using (pst_path, "
+           "message_node_id, attachment_node_id) rows while keeping the "
+           "messages.";
+  case duckpst::PSTDeleteFunctionMode::FreeSpace:
+    return "Preview or wipe unused space in PST files matched by a path or "
+           "pattern.";
+  default:
+    throw InternalException("Missing PST delete function description");
+  }
+}
+
+static string DeleteExample(duckpst::PSTDeleteFunctionMode mode) {
+  switch (mode) {
+  case duckpst::PSTDeleteFunctionMode::Message:
+    return "SELECT * FROM delete_pst_messages((SELECT pst_path, node_id FROM "
+           "read_pst_messages('test/unittest.pst') LIMIT 1));";
+  case duckpst::PSTDeleteFunctionMode::Folder:
+    return "SELECT * FROM delete_pst_folders((SELECT pst_path, node_id FROM "
+           "read_pst_folders('test/unittest.pst') WHERE display_name = "
+           "'Notes'));";
+  case duckpst::PSTDeleteFunctionMode::Attachment:
+    return "SELECT * FROM delete_pst_attachments((SELECT m.pst_path, "
+           "m.node_id, a.node_id FROM read_pst_messages('test/unittest.pst') "
+           "m, UNNEST(m.attachments) t(a) LIMIT 1));";
+  case duckpst::PSTDeleteFunctionMode::FreeSpace:
+    return "SELECT * FROM wipe_pst_free_space('test/unittest.pst');";
+  default:
+    throw InternalException("Missing PST delete function example");
+  }
+}
+
+static void RegisterDocumentedFunction(ExtensionLoader &loader,
+                                       TableFunction function,
+                                       const string &parameter_name,
+                                       const string &description_text,
+                                       const string &example,
+                                       const string &category) {
+  CreateTableFunctionInfo info(std::move(function));
+  FunctionDescription description;
+  description.parameter_names = {parameter_name};
+  description.description = description_text;
+  description.examples = {example};
+  description.categories = {"PST", category};
+  info.descriptions.push_back(std::move(description));
+  info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
+  loader.RegisterFunction(std::move(info));
+}
 
 static void LoadInternal(ExtensionLoader &loader) {
   auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
@@ -53,10 +134,12 @@ static void LoadInternal(ExtensionLoader &loader) {
 
   for (auto pair : duckpst::FUNCTIONS) {
     TableFunction concrete = proto;
-    auto &[name, _mode] = pair;
+    auto &[name, mode] = pair;
 
     concrete.name = name;
-    loader.RegisterFunction(concrete);
+    RegisterDocumentedFunction(
+        loader, std::move(concrete), "path", ReadDescription(mode),
+        "SELECT * FROM " + name + "('test/unittest.pst');", "Read");
   }
 
   TableFunction delete_proto("default", {LogicalType::TABLE}, nullptr,
@@ -77,7 +160,9 @@ static void LoadInternal(ExtensionLoader &loader) {
 
     TableFunction concrete = delete_proto;
     concrete.name = name;
-    loader.RegisterFunction(concrete);
+    RegisterDocumentedFunction(loader, std::move(concrete), "targets",
+                               DeleteDescription(mode), DeleteExample(mode),
+                               "Delete");
   }
 
   // A wipe takes a globbable path rather than a table of node ids
@@ -86,7 +171,10 @@ static void LoadInternal(ExtensionLoader &loader) {
                      duckpst::PSTDeleteInitGlobal);
 
   wipe.named_parameters = duckpst::DELETE_NAMED_PARAMETERS;
-  loader.RegisterFunction(wipe);
+  RegisterDocumentedFunction(
+      loader, std::move(wipe), "path",
+      DeleteDescription(duckpst::PSTDeleteFunctionMode::FreeSpace),
+      DeleteExample(duckpst::PSTDeleteFunctionMode::FreeSpace), "Delete");
 }
 
 void PstExtension::Load(ExtensionLoader &loader) { LoadInternal(loader); }
