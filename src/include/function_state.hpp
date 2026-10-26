@@ -1,6 +1,7 @@
 #pragma once
 
 #include "duckdb/common/typedefs.hpp"
+#include "duckdb/common/queue.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "pst/typed_bag.hpp"
 #include "table_function.hpp"
@@ -20,7 +21,8 @@ class PSTReadGlobalState : public GlobalTableFunctionState {
   boost::synchronized_value<queue<PSTInputPartition>> partitions;
 
 public:
-  PSTReadGlobalState(const PSTReadTableFunctionData &bind_data,
+  PSTReadGlobalState(ClientContext &ctx,
+                     const PSTReadTableFunctionData &bind_data,
                      const TableFunctionInitInput &input);
   const PSTReadTableFunctionData &bind_data;
 

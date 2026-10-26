@@ -1,6 +1,7 @@
 #include "function_state.hpp"
 
 #include "duckdb/function/table_function.hpp"
+#include "duckdb/planner/table_filter_set.hpp"
 #include "pst/typed_bag.hpp"
 #include "row_serializer.hpp"
 #include "table_function.hpp"
@@ -18,7 +19,7 @@ using namespace pstsdk;
 
 // PSTReadGlobalState
 PSTReadGlobalState::PSTReadGlobalState(
-    const PSTReadTableFunctionData &bind_data,
+    ClientContext &ctx, const PSTReadTableFunctionData &bind_data,
     const TableFunctionInitInput &input)
     : bind_data(bind_data), column_ids(input.column_ids) {
   nodes_processed = 0;
@@ -31,12 +32,12 @@ PSTReadGlobalState::PSTReadGlobalState(
   for (auto partition : bind_data.partitions.get()) {
 
     if (input.filters) {
-      for (auto &[column_id, f] : input.filters->filters) {
-        auto schema_col = input.column_ids[column_id];
+      for (auto &entry : *input.filters) {
+        auto schema_col = input.column_ids[entry.GetIndex()];
         switch (schema_col) {
         case schema::PST_VCOL_PARTITION_INDEX:
         case schema::PST_VCOL_NODE_ID: {
-          auto new_nodes = partition.prune(schema_col, f);
+          auto new_nodes = partition.prune(ctx, schema_col, entry.Filter());
           partition.nodes = {new_nodes.begin(), new_nodes.end()};
           break;
         }

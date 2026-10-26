@@ -14,6 +14,7 @@
 #include "duckdb/function/partition_stats.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "duckdb/planner/table_filter.hpp"
 #include "duckdb/storage/statistics/node_statistics.hpp"
 
 #include <pstsdk/pst.h>
@@ -105,14 +106,15 @@ struct PSTInputPartition {
                     const vector<node_id> &&nodes);
   PSTInputPartition(const PSTInputPartition &other_partition);
 
-  set<node_id> prune(idx_t schema_col, const unique_ptr<TableFilter> &filter);
+  set<node_id> prune(ClientContext &ctx, idx_t schema_col,
+                     const TableFilter &filter);
 };
 
 struct PSTReadTableFunctionData : public TableFunctionData {
   vector<OpenFileInfo> files;
   boost::synchronized_value<vector<PSTInputPartition>> partitions;
 
-  duckdb::named_parameter_map_t named_parameters;
+  duckdb::named_argument_map_t named_parameters;
 
 public:
   const PSTReadFunctionMode mode;
@@ -126,7 +128,7 @@ public:
    */
   PSTReadTableFunctionData(ClientContext &ctx, const string &&path,
                            const PSTReadFunctionMode mode,
-                           duckdb::named_parameter_map_t &named_parameters);
+                           duckdb::named_argument_map_t &named_parameters);
 
   PSTReadTableFunctionData(const PSTReadTableFunctionData &other_data);
 
@@ -144,7 +146,7 @@ public:
    * @param names Positionally ordered column names
    */
   void bind_table_function_output_schema(vector<LogicalType> &return_types,
-                                         vector<string> &names);
+                                         vector<Identifier> &names);
 
   /**
    * @brief Plan all partitions for all files
@@ -178,7 +180,7 @@ private:
 unique_ptr<FunctionData> PSTReadBind(ClientContext &ctx,
                                      TableFunctionBindInput &input,
                                      vector<LogicalType> &return_types,
-                                     vector<string> &names);
+                                     vector<Identifier> &names);
 
 unique_ptr<GlobalTableFunctionState>
 PSTReadInitGlobal(ClientContext &ctx, TableFunctionInitInput &input);
@@ -199,8 +201,7 @@ vector<PartitionStatistics> PSTPartitionStats(ClientContext &ctx,
 double PSTReadProgress(ClientContext &context, const FunctionData *bind_data,
                        const GlobalTableFunctionState *global_state);
 
-InsertionOrderPreservingMap<string>
-PSTDynamicToString(duckdb::TableFunctionDynamicToStringInput &);
+void PSTGetMetrics(duckdb::TableFunctionGetMetricsInput &);
 
 virtual_column_map_t PSTVirtualColumns(ClientContext &ctx,
                                        optional_ptr<FunctionData> bind_data);

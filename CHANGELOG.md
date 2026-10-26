@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Updated DuckDB to 2.0.0 and synced extension CI tools with upstream, retaining the GNU libiconv overlay for macOS
+- Adapted function signatures, enum vectors, filter projection indexes, expression filters, and scan metrics to DuckDB 2.0 APIs
+- Pinned CI builds to the same DuckDB release and CI tools as local builds; switched the CI-tools submodule to HTTPS
+
 ## [0.2.1] - 2026-08-28
 
 - Switched the `microsoft-pst-sdk` submodule to its public HTTPS URL under the current `intellekthq` organization so anonymous CI runners can initialize it

@@ -90,34 +90,10 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Get DuckDB branch name
-        if: steps.check.outputs.needed == 'true' && steps.existing_pr.outputs.exists == 'false'
-        id: branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          LATEST="${{ steps.latest.outputs.tag }}"
-
-          # Extract major.minor from tag (e.g., v1.5.1 -> 1.5)
-          VERSION="${LATEST#v}"
-          MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
-
-          # Find the branch matching vX.Y-* pattern
-          BRANCH_NAME=$(gh api "repos/duckdb/duckdb/branches" --paginate --jq ".[] | select(.name | test(\"^v${MAJOR_MINOR}-\")) | .name" | head -1)
-
-          if [ -z "$BRANCH_NAME" ]; then
-            echo "Could not find branch for v${MAJOR_MINOR}, falling back to tag"
-            BRANCH_NAME="$LATEST"
-          fi
-
-          echo "DuckDB branch name: $BRANCH_NAME"
-          echo "name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-
       - name: Update submodule and workflow
         if: steps.check.outputs.needed == 'true' && steps.existing_pr.outputs.exists == 'false'
         run: |
           LATEST="${{ steps.latest.outputs.tag }}"
-          BRANCH_NAME="${{ steps.branch.outputs.name }}"
 
           # Configure git
           git config user.name "github-actions[bot]"
@@ -131,7 +107,7 @@ jobs:
           git add duckdb
 
           # Update duckdb_version in workflow file
-          sed -i "s/duckdb_version: v[0-9]*\.[0-9]*-[a-z]*/duckdb_version: ${BRANCH_NAME}/g" .github/workflows/MainDistributionPipeline.yml
+          sed -i "s/duckdb_version: v[^ ]*/duckdb_version: ${LATEST}/g" .github/workflows/MainDistributionPipeline.yml
           git add .github/workflows/MainDistributionPipeline.yml
 
           # Show changes
@@ -163,7 +139,7 @@ jobs:
           Automated PR to update DuckDB submodule to ${LATEST}.
 
           - Updates \`duckdb\` submodule to \`${LATEST}\`
-          - Updates \`duckdb_version\` in CI workflow to \`${{ steps.branch.outputs.name }}\`
+          - Updates \`duckdb_version\` in CI workflow to \`${LATEST}\`
 
           ## Testing
 
