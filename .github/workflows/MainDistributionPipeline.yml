@@ -13,6 +13,8 @@ on:
       - 'vcpkg.json'
       - '.github/workflows/MainDistributionPipeline.yml'
       - 'duckdb'
+      - 'extension-ci-tools'
+      - '.gitmodules'
       - 'microsoft-pst-sdk'
   pull_request:
     paths:
@@ -24,6 +26,8 @@ on:
       - 'vcpkg.json'
       - '.github/workflows/MainDistributionPipeline.yml'
       - 'duckdb'
+      - 'extension-ci-tools'
+      - '.gitmodules'
       - 'microsoft-pst-sdk'
   workflow_dispatch:
 
@@ -34,10 +38,11 @@ concurrency:
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
-    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@main
+    uses: intellekthq/duckdb-extension-ci-tools/.github/workflows/_extension_distribution.yml@c09374aa16e61d7fd6fbc13d8dc3ffc498d60914
     with:
-      duckdb_version: v1.5-variegata
-      ci_tools_version: main
+      duckdb_version: v2.0.0
+      ci_tools_version: c09374aa16e61d7fd6fbc13d8dc3ffc498d60914
+      override_ci_tools_repository: intellekthq/duckdb-extension-ci-tools
       extension_name: pst
       exclude_archs: windows_amd64_mingw
 
@@ -45,19 +50,21 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
     name: Deploy stable extension binaries
     needs: duckdb-stable-build
-    uses: duckdb/extension-ci-tools/.github/workflows/_extension_deploy.yml@main
+    uses: intellekthq/duckdb-extension-ci-tools/.github/workflows/_extension_deploy.yml@c09374aa16e61d7fd6fbc13d8dc3ffc498d60914
     with:
       extension_name: pst
-      ci_tools_version: main
-      duckdb_version: v1.5-variegata
+      ci_tools_version: c09374aa16e61d7fd6fbc13d8dc3ffc498d60914
+      override_ci_tools_repository: intellekthq/duckdb-extension-ci-tools
+      duckdb_version: v2.0.0
       exclude_archs: windows_amd64_mingw
       deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
 
   code-quality-check:
     name: Code Quality Check
-    uses: duckdb/extension-ci-tools/.github/workflows/_extension_code_quality.yml@main
+    uses: intellekthq/duckdb-extension-ci-tools/.github/workflows/_extension_code_quality.yml@c09374aa16e61d7fd6fbc13d8dc3ffc498d60914
     with:
-      duckdb_version: v1.5-variegata
-      ci_tools_version: main
+      duckdb_version: v2.0.0
+      ci_tools_version: c09374aa16e61d7fd6fbc13d8dc3ffc498d60914
+      override_ci_tools_repository: intellekthq/duckdb-extension-ci-tools
       extension_name: pst
       format_checks: 'format'

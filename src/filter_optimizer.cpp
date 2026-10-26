@@ -16,47 +16,41 @@
 #include <optional>
 
 namespace intellekt::duckpst {
-map<idx_t, unique_ptr<TableFilter>>
+map<ProjectionIndex, unique_ptr<TableFilter>>
 PSTFilterOptimizer::CollectAndEraseNonVirtualColumnFilters(
     LogicalGet &pst_logical_get) {
-  map<idx_t, unique_ptr<TableFilter>> non_vcol_filters;
+  map<ProjectionIndex, unique_ptr<TableFilter>> non_vcol_filters;
 
-  for (auto &[schema_col, f] : pst_logical_get.table_filters.filters) {
+  for (auto &entry : pst_logical_get.table_filters) {
+    auto projection_id = entry.GetIndex();
+    auto schema_col =
+        pst_logical_get.GetColumnIds()[projection_id].GetPrimaryIndex();
     if (schema_col >= schema::DUCKDB_VIRTUAL_COLUMN_START)
       continue;
 
-    non_vcol_filters.insert({schema_col, f->Copy()});
+    non_vcol_filters.insert({projection_id, entry.TakeFilter()});
   }
 
-  for (auto &[schema_col, _] : non_vcol_filters) {
-    pst_logical_get.table_filters.filters.erase(schema_col);
+  for (auto &[projection_id, _] : non_vcol_filters) {
+    pst_logical_get.table_filters.RemoveFilterByColumnIndex(projection_id);
   }
 
   return non_vcol_filters;
 }
 
 unique_ptr<LogicalFilter> PSTFilterOptimizer::CreateLogicalFilter(
-    map<idx_t, unique_ptr<TableFilter>> &non_vcol_filters,
+    map<ProjectionIndex, unique_ptr<TableFilter>> &non_vcol_filters,
     LogicalGet &pst_logical_get) {
   auto logical_filter = make_uniq<LogicalFilter>();
-  for (auto &[schema_col, tfilter] : non_vcol_filters) {
-    std::optional<idx_t> projection_id;
-    for (idx_t pid = 0; pid < pst_logical_get.GetColumnIds().size(); ++pid) {
-      if (pst_logical_get.GetColumnIds()[pid].GetPrimaryIndex() == schema_col) {
-        projection_id.emplace(pid);
-        break;
-      }
-    }
-
-    // Must be able to bind positional column ID
-    if (!projection_id)
-      continue;
+  for (auto &[projection_id, tfilter] : non_vcol_filters) {
+    auto schema_col =
+        pst_logical_get.GetColumnIds()[projection_id].GetPrimaryIndex();
 
     logical_filter->expressions.emplace_back(
         tfilter->ToExpression(BoundColumnRefExpression(
             pst_logical_get.names[schema_col],
             pst_logical_get.returned_types[schema_col],
-            ColumnBinding(pst_logical_get.table_index, *projection_id))));
+            ColumnBinding(pst_logical_get.table_index, projection_id))));
   }
 
   return logical_filter;
@@ -74,8 +68,8 @@ void PSTFilterOptimizer::RewriteEligiblePSTFilters(
     if (child->type != LogicalOperatorType::LOGICAL_GET)
       continue;
     auto &pst_logical_get = child->Cast<LogicalGet>();
-    auto maybe_pst_function_mode =
-        duckpst::FUNCTIONS.find(pst_logical_get.function.name);
+    auto maybe_pst_function_mode = duckpst::FUNCTIONS.find(
+        pst_logical_get.function.GetName().GetIdentifierName());
     if (maybe_pst_function_mode == duckpst::FUNCTIONS.end())
       continue;
 
