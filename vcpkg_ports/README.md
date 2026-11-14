@@ -9,7 +9,7 @@ copyright-install step preserves GNU libiconv's LGPL/GPL notices.
 Keep this overlay in the extension repository: community CI replaces the
 `extension-ci-tools` checkout with the upstream harness, which has no libiconv
 overlay. `vcpkg.json` lists this directory before the CI-tools manifest overlay.
-The harness's environment overlay is still searched first; missing ports fall
-through to the manifest. The source-owned libiconv port must appear in vcpkg's
-install plan. CMake rejects built-in iconv on macOS, and
+The source manifest takes precedence over the harness's environment overlay,
+so the source-owned libiconv port must appear in vcpkg's install plan. CMake
+rejects built-in iconv on macOS, and
 `test/sql/utf16_decoding.test` checks known non-ASCII UTF-16LE fixture text.
