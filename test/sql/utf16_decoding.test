@@ -1,0 +1,17 @@
+# name: test/sql/utf16_decoding.test
+# description: Decode known UTF-16LE text with GNU iconv on macOS
+# group: [sql]
+
+require pst
+
+statement ok
+LOAD pst;
+
+# This SDK fixture contains U+2019, not an ASCII apostrophe or a replacement.
+query II
+SELECT substr(body, 25, 12) = '. It' || chr(8217) || 's my da',
+       strpos(body, chr(8217))
+FROM read_pst_messages('microsoft-pst-sdk/test/sample1.pst')
+WHERE node_id = 2097188
+----
+true	29

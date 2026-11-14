@@ -4,8 +4,9 @@ PROJ_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 EXT_NAME=pst
 EXT_CONFIG=${PROJ_DIR}extension_config.cmake
 
-# DuckDB 2.0 requires an explicit release identity for loadable extensions.
-export DUCKDB_VERSION ?= $(shell git -C "$(PROJ_DIR)duckdb" describe --tags --exact-match --match 'v[0-9]*' 2>/dev/null)
+# Use an exact release tag or the actual source commit, never a nearby release.
+# CI may supply a staged prebuilt identity for that same commit.
+export DUCKDB_VERSION ?= $(shell git -C "$(PROJ_DIR)duckdb" describe --tags --exact-match --match 'v[0-9]*' 2>/dev/null || git -C "$(PROJ_DIR)duckdb" rev-parse HEAD)
 
 # properly (?) set c++17
 # Override VCPKG_OVERLAY_TRIPLETS to use dynamic CRT (/MD) on Windows,

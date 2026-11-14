@@ -51,9 +51,13 @@ if(Boost_FOUND)
 endif()
 
 # GNU iconv is required on macOS to avoid decoder bug with UTF-16LE. The custom
-# vcpkg overlay port in extension-ci-tools/vcpkg_ports/libiconv forces GNU
-# libiconv to build on macOS instead of using the system stub.
+# source-owned vcpkg overlay port in vcpkg_ports/libiconv forces GNU libiconv to
+# build on macOS instead of using the system stub.
 find_package(Iconv REQUIRED)
+if(APPLE AND Iconv_IS_BUILT_IN)
+  message(
+    FATAL_ERROR "PST requires GNU libiconv from vcpkg_ports/libiconv on macOS")
+endif()
 if(Iconv_FOUND)
   list(APPEND DUCKPST_LINK Iconv::Iconv)
 endif()

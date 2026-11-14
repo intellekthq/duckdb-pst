@@ -6,9 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Updated DuckDB to 2.0.0 and synced extension CI tools with upstream, retaining the GNU libiconv overlay for macOS
+## [0.3.0] - 2026-11-14
+
+- Updated DuckDB to the pinned 2.0 development branch, with a separate compatibility build against the community extension target, DuckDB 2.0.0
 - Adapted function signatures, enum vectors, filter projection indexes, expression filters, and scan metrics to DuckDB 2.0 APIs
-- Pinned CI builds to the same DuckDB release and CI tools as local builds; switched the CI-tools submodule to HTTPS
+- Fixed output vector sizes so NULL checks see emitted rows, with regressions for reordered projections, mixed real/virtual filters, and partition metrics
+- Documented all 12 PST functions in `duckdb_functions()`, including runnable, preview-only deletion examples (#20)
+- Kept the GNU libiconv overlay in the extension source so macOS UTF-16LE decoding also works with the upstream community build harness
+- Aligned local and CI DuckDB identities with the actual source or matching prebuilt runtime; switched the CI-tools submodule to HTTPS
+- Stopped release tags from deploying to the unrelated nightly extension bucket; main-branch deployment is unchanged
 
 ## [0.2.1] - 2026-08-28
 
@@ -81,7 +87,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - macOS (x86_64, ARM64)
 - Windows (x86_64)
 
-[Unreleased]: https://github.com/intellekthq/duckdb-pst/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/intellekthq/duckdb-pst/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/intellekthq/duckdb-pst/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/intellekthq/duckdb-pst/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/intellekthq/duckdb-pst/compare/v0.1.2...v0.1.3
