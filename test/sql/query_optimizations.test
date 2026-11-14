@@ -14,7 +14,7 @@ load pst;
 query II
 explain select count(*) from read_pst_messages('test/unittest.pst');
 ----
-physical_plan	<REGEX>:.*COLUMN_DATA_SCAN.*
+physical_plan	<REGEX>:.*Column Data Scan.*
 
 # Test read_pst_notes plan level filter - should have 5 notes (IPM.Note)
 query II
@@ -50,4 +50,4 @@ physical_plan	<REGEX>:.*1 row.*
 query II
 explain select * from read_pst_messages('test/unittest.pst') where conversation_topic like 'Test%' order by conversation_topic limit 2;
 ----
-physical_plan	<REGEX>:.*HASH_JOIN.*
+physical_plan	<REGEX>:.*Hash Join.*

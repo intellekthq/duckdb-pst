@@ -2,6 +2,7 @@
 
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/types/vector.hpp"
+#include "duckdb/common/vector/vector_writer.hpp"
 
 namespace intellekt::duckpst::schema {
 using namespace duckdb;
@@ -22,60 +23,60 @@ static inline set<column_t> PST_VCOLS = {PST_VCOL_PARTITION_INDEX,
 /* Enum schemas */
 inline LogicalType RecipientTypeSchema() {
   Vector values(LogicalType::VARCHAR, 3);
-  auto data = FlatVector::GetData<string_t>(values);
-  data[0] = StringVector::AddString(values, "TO");
-  data[1] = StringVector::AddString(values, "CC");
-  data[2] = StringVector::AddString(values, "BCC");
+  auto writer = FlatVector::Writer<string_t>(values, 3);
+  writer.WriteValue(string_t("TO"));
+  writer.WriteValue(string_t("CC"));
+  writer.WriteValue(string_t("BCC"));
   return LogicalType::ENUM(values, 3);
 }
 
 inline LogicalType ImportanceSchema() {
   Vector values(LogicalType::VARCHAR, 3);
-  auto data = FlatVector::GetData<string_t>(values);
-  data[0] = StringVector::AddString(values, "LOW");
-  data[1] = StringVector::AddString(values, "NORMAL");
-  data[2] = StringVector::AddString(values, "HIGH");
+  auto writer = FlatVector::Writer<string_t>(values, 3);
+  writer.WriteValue(string_t("LOW"));
+  writer.WriteValue(string_t("NORMAL"));
+  writer.WriteValue(string_t("HIGH"));
   return LogicalType::ENUM(values, 3);
 }
 
 inline LogicalType PrioritySchema() {
   Vector values(LogicalType::VARCHAR, 3);
-  auto data = FlatVector::GetData<string_t>(values);
-  data[0] = StringVector::AddString(values, "NONURGENT");
-  data[1] = StringVector::AddString(values, "NORMAL");
-  data[2] = StringVector::AddString(values, "URGENT");
+  auto writer = FlatVector::Writer<string_t>(values, 3);
+  writer.WriteValue(string_t("NONURGENT"));
+  writer.WriteValue(string_t("NORMAL"));
+  writer.WriteValue(string_t("URGENT"));
   return LogicalType::ENUM(values, 3);
 }
 
 inline LogicalType SensitivitySchema() {
   Vector values(LogicalType::VARCHAR, 4);
-  auto data = FlatVector::GetData<string_t>(values);
-  data[0] = StringVector::AddString(values, "NONE");
-  data[1] = StringVector::AddString(values, "PERSONAL");
-  data[2] = StringVector::AddString(values, "PRIVATE");
-  data[3] = StringVector::AddString(values, "CONFIDENTIAL");
+  auto writer = FlatVector::Writer<string_t>(values, 4);
+  writer.WriteValue(string_t("NONE"));
+  writer.WriteValue(string_t("PERSONAL"));
+  writer.WriteValue(string_t("PRIVATE"));
+  writer.WriteValue(string_t("CONFIDENTIAL"));
   return LogicalType::ENUM(values, 4);
 }
 
 inline LogicalType AttachMethodSchema() {
   Vector values(LogicalType::VARCHAR, 7);
-  auto data = FlatVector::GetData<string_t>(values);
-  data[0] = StringVector::AddString(values, "NO_ATTACHMENT");
-  data[1] = StringVector::AddString(values, "BY_VALUE");
-  data[2] = StringVector::AddString(values, "BY_REFERENCE");
-  data[3] = StringVector::AddString(values, "BY_REF_RESOLVE");
-  data[4] = StringVector::AddString(values, "BY_REF_ONLY");
-  data[5] = StringVector::AddString(values, "EMBEDDED_MESSAGE");
-  data[6] = StringVector::AddString(values, "OLE");
+  auto writer = FlatVector::Writer<string_t>(values, 7);
+  writer.WriteValue(string_t("NO_ATTACHMENT"));
+  writer.WriteValue(string_t("BY_VALUE"));
+  writer.WriteValue(string_t("BY_REFERENCE"));
+  writer.WriteValue(string_t("BY_REF_RESOLVE"));
+  writer.WriteValue(string_t("BY_REF_ONLY"));
+  writer.WriteValue(string_t("EMBEDDED_MESSAGE"));
+  writer.WriteValue(string_t("OLE"));
   return LogicalType::ENUM(values, 7);
 }
 
 inline LogicalType DeleteStatusSchema() {
   Vector values(LogicalType::VARCHAR, 3);
-  auto data = FlatVector::GetData<string_t>(values);
-  data[0] = StringVector::AddString(values, "PREVIEWED");
-  data[1] = StringVector::AddString(values, "DELETED");
-  data[2] = StringVector::AddString(values, "FAILED");
+  auto writer = FlatVector::Writer<string_t>(values, 3);
+  writer.WriteValue(string_t("PREVIEWED"));
+  writer.WriteValue(string_t("DELETED"));
+  writer.WriteValue(string_t("FAILED"));
   return LogicalType::ENUM(values, 3);
 }
 

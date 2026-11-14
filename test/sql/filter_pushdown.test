@@ -1,0 +1,74 @@
+# name: test/sql/filter_pushdown.test
+# description: Filter indexes, expression filters and scan metrics on DuckDB 2.0
+# group: [sql]
+
+require pst
+
+statement ok
+LOAD pst;
+
+statement ok
+SET threads = 1;
+
+statement ok
+CREATE TABLE expected AS
+SELECT *, __node_id, __partition
+FROM read_pst_messages('test/unittest.pst', partition_size := 2);
+
+# Reordered projections must map filters to the underlying schema columns.
+query I
+WITH actual AS (
+  SELECT subject, node_id, message_class
+  FROM read_pst_messages('test/unittest.pst', partition_size := 2)
+  WHERE message_class = 'IPM.Note' AND node_id > 2097188
+), wanted AS (
+  SELECT subject, node_id, message_class FROM expected
+  WHERE message_class = 'IPM.Note' AND node_id > 2097188
+)
+SELECT count(*) FROM (
+  (SELECT * FROM actual EXCEPT ALL SELECT * FROM wanted)
+  UNION ALL
+  (SELECT * FROM wanted EXCEPT ALL SELECT * FROM actual)
+);
+----
+0
+
+# Combine real-column filters with virtual node and partition filters.
+query I
+WITH actual AS (
+  SELECT subject, __node_id, __partition
+  FROM read_pst_messages('test/unittest.pst', partition_size := 2)
+  WHERE (__node_id IN (2097188, 2097220) OR __node_id > 2097252)
+    AND __partition >= 1 AND message_class = 'IPM.Note'
+), wanted AS (
+  SELECT subject, __node_id, __partition FROM expected
+  WHERE (__node_id IN (2097188, 2097220) OR __node_id > 2097252)
+    AND __partition >= 1 AND message_class = 'IPM.Note'
+)
+SELECT count(*) FROM (
+  (SELECT * FROM actual EXCEPT ALL SELECT * FROM wanted)
+  UNION ALL
+  (SELECT * FROM wanted EXCEPT ALL SELECT * FROM actual)
+);
+----
+0
+
+query I
+SELECT count(*) FROM read_pst_messages('test/unittest.pst')
+WHERE __node_id = 2097188;
+----
+1
+
+query I
+SELECT count(*) FROM read_pst_messages('test/unittest.pst')
+WHERE __node_id < 1;
+----
+0
+
+# The runtime metrics hook must report the partitions left after pruning.
+query II
+EXPLAIN ANALYZE SELECT subject
+FROM read_pst_messages('test/unittest.pst', partition_size := 2)
+WHERE __partition = 0;
+----
+analyzed_plan	<REGEX>:.*Partitions read: 1.*

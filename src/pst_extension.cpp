@@ -83,6 +83,7 @@ static void RegisterDocumentedFunction(ExtensionLoader &loader,
                                        const string &description_text,
                                        const string &example,
                                        const string &category) {
+  function.GetSignature().GetParameter(0).SetName(Identifier(parameter_name));
   CreateTableFunctionInfo info(std::move(function));
   FunctionDescription description;
   description.parameter_names = {parameter_name};
@@ -123,20 +124,24 @@ static void LoadInternal(ExtensionLoader &loader) {
   proto.get_row_id_columns = duckpst::PSTRowIDColumns;
 
   proto.table_scan_progress = duckpst::PSTReadProgress;
-  proto.dynamic_to_string = duckpst::PSTDynamicToString;
+  proto.get_metrics = duckpst::PSTGetMetrics;
 
   proto.filter_pushdown = true;
   proto.projection_pushdown = true;
   proto.late_materialization = true;
   proto.pushdown_expression = duckpst::PSTPushdownExpression;
 
-  proto.named_parameters = duckpst::NAMED_PARAMETERS;
+  proto.GetSignature().WithTypedKwargs("options", [](TypedKwargs &options) {
+    for (const auto &parameter : duckpst::NAMED_PARAMETERS) {
+      options.Add(Identifier(parameter.first), parameter.second);
+    }
+  });
 
   for (auto pair : duckpst::FUNCTIONS) {
     TableFunction concrete = proto;
     auto &[name, mode] = pair;
 
-    concrete.name = name;
+    concrete.name = Identifier(name);
     RegisterDocumentedFunction(
         loader, std::move(concrete), "path", ReadDescription(mode),
         "SELECT * FROM " + name + "('test/unittest.pst');", "Read");
@@ -148,7 +153,12 @@ static void LoadInternal(ExtensionLoader &loader) {
 
   delete_proto.in_out_function = duckpst::PSTDeleteFunction;
   delete_proto.in_out_function_final = duckpst::PSTDeleteFinalFunction;
-  delete_proto.named_parameters = duckpst::DELETE_NAMED_PARAMETERS;
+  delete_proto.GetSignature().WithTypedKwargs(
+      "options", [](TypedKwargs &options) {
+        for (const auto &parameter : duckpst::DELETE_NAMED_PARAMETERS) {
+          options.Add(Identifier(parameter.first), parameter.second);
+        }
+      });
 
   // Targets are grouped per file, so output order does not follow input order
   delete_proto.order_preservation_type = OrderPreservationType::NO_ORDER;
@@ -159,7 +169,7 @@ static void LoadInternal(ExtensionLoader &loader) {
       continue;
 
     TableFunction concrete = delete_proto;
-    concrete.name = name;
+    concrete.name = Identifier(name);
     RegisterDocumentedFunction(loader, std::move(concrete), "targets",
                                DeleteDescription(mode), DeleteExample(mode),
                                "Delete");
@@ -170,7 +180,11 @@ static void LoadInternal(ExtensionLoader &loader) {
                      duckpst::PSTWipeFunction, duckpst::PSTWipeBind,
                      duckpst::PSTDeleteInitGlobal);
 
-  wipe.named_parameters = duckpst::DELETE_NAMED_PARAMETERS;
+  wipe.GetSignature().WithTypedKwargs("options", [](TypedKwargs &options) {
+    for (const auto &parameter : duckpst::DELETE_NAMED_PARAMETERS) {
+      options.Add(Identifier(parameter.first), parameter.second);
+    }
+  });
   RegisterDocumentedFunction(
       loader, std::move(wipe), "path",
       DeleteDescription(duckpst::PSTDeleteFunctionMode::FreeSpace),

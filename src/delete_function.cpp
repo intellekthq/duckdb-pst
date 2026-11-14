@@ -49,11 +49,11 @@ static const idx_t ERROR_COLUMN_LIMIT = 6;
  *
  * @param names The child's column names
  */
-static string column_list(const vector<string> &names) {
+static string column_list(const vector<Identifier> &names) {
   if (names.size() <= ERROR_COLUMN_LIMIT)
     return StringUtil::Join(names, ", ");
 
-  vector<string> head(names.begin(), names.begin() + ERROR_COLUMN_LIMIT);
+  vector<Identifier> head(names.begin(), names.begin() + ERROR_COLUMN_LIMIT);
   return StringUtil::Format("%s, ... (%llu more)", StringUtil::Join(head, ", "),
                             names.size() - ERROR_COLUMN_LIMIT);
 }
@@ -64,12 +64,12 @@ static string column_list(const vector<string> &names) {
  * @param names The child's column names
  * @param want The names this mode's contract calls for
  */
-static bool has_columns(const vector<string> &names,
+static bool has_columns(const vector<Identifier> &names,
                         const vector<string> &want) {
   for (auto &needed : want) {
     bool found = false;
     for (auto &name : names)
-      found = found || StringUtil::CIEquals(name, needed);
+      found = found || name == needed;
 
     if (!found)
       return false;
@@ -100,7 +100,7 @@ static bool reversed_columns(const vector<LogicalType> &got,
 
 PSTDeleteTableFunctionData::PSTDeleteTableFunctionData(
     const PSTDeleteFunctionMode mode, const string &function_name,
-    duckdb::named_parameter_map_t &named_parameters)
+    duckdb::named_argument_map_t &named_parameters)
     : named_parameters(named_parameters), mode(mode),
       function_name(function_name) {}
 
@@ -144,7 +144,7 @@ void PSTDeleteTableFunctionData::bind_files(ClientContext &ctx,
 }
 
 void PSTDeleteTableFunctionData::bind_table_function_output_schema(
-    vector<LogicalType> &return_types, vector<string> &names) {
+    vector<LogicalType> &return_types, vector<Identifier> &names) {
   LogicalType schema;
 
   switch (mode) {
@@ -251,15 +251,16 @@ static void check_gate(ClientContext &ctx, const string &function_name) {
 unique_ptr<FunctionData> PSTDeleteBind(ClientContext &ctx,
                                        TableFunctionBindInput &input,
                                        vector<LogicalType> &return_types,
-                                       vector<string> &names) {
+                                       vector<Identifier> &names) {
   DUCKDB_LOG_DEBUG(ctx, "bind [PSTDeleteBind]");
 
   auto function_data = make_uniq<PSTDeleteTableFunctionData>(
-      DELETE_FUNCTIONS.at(input.table_function.name), input.table_function.name,
+      DELETE_FUNCTIONS.at(input.table_function.GetName().GetIdentifierName()),
+      input.table_function.GetName().GetIdentifierName(),
       input.named_parameters);
 
   if (function_data->really())
-    check_gate(ctx, input.table_function.name);
+    check_gate(ctx, input.table_function.GetName().GetIdentifierName());
 
   function_data->bind_input_table_schema(ctx, input);
   function_data->bind_table_function_output_schema(return_types, names);
@@ -269,15 +270,16 @@ unique_ptr<FunctionData> PSTDeleteBind(ClientContext &ctx,
 unique_ptr<FunctionData> PSTWipeBind(ClientContext &ctx,
                                      TableFunctionBindInput &input,
                                      vector<LogicalType> &return_types,
-                                     vector<string> &names) {
+                                     vector<Identifier> &names) {
   DUCKDB_LOG_DEBUG(ctx, "bind [PSTWipeBind]");
 
   auto function_data = make_uniq<PSTDeleteTableFunctionData>(
-      PSTDeleteFunctionMode::FreeSpace, input.table_function.name,
+      PSTDeleteFunctionMode::FreeSpace,
+      input.table_function.GetName().GetIdentifierName(),
       input.named_parameters);
 
   if (function_data->really())
-    check_gate(ctx, input.table_function.name);
+    check_gate(ctx, input.table_function.GetName().GetIdentifierName());
 
   auto path = input.inputs[0].GetValue<string>();
   function_data->bind_files(ctx, path);
@@ -544,28 +546,28 @@ idx_t PSTDeleteGlobalState::emit_rows(DataChunk &output) {
 
     idx_t col = 0;
     // Empty only when the input row's path was NULL, which has no path to name
-    output.SetValue(col++, rows,
-                    result.path.empty() ? Value(LogicalType::VARCHAR)
-                                        : Value(result.path));
+    output.data[col++].SetValue(rows, result.path.empty()
+                                          ? Value(LogicalType::VARCHAR)
+                                          : Value(result.path));
 
     if (bind_data.mode == PSTDeleteFunctionMode::FreeSpace) {
-      output.SetValue(col++, rows,
-                      result.status == PSTDeleteStatus::Deleted
-                          ? Value::UBIGINT(result.bytes_wiped)
-                          : Value(LogicalType::UBIGINT));
+      output.data[col++].SetValue(rows,
+                                  result.status == PSTDeleteStatus::Deleted
+                                      ? Value::UBIGINT(result.bytes_wiped)
+                                      : Value(LogicalType::UBIGINT));
     } else if (bind_data.mode == PSTDeleteFunctionMode::Attachment) {
-      output.SetValue(col++, rows, Value::UINTEGER(result.owner));
-      output.SetValue(col++, rows, Value::UINTEGER(result.node));
+      output.data[col++].SetValue(rows, Value::UINTEGER(result.owner));
+      output.data[col++].SetValue(rows, Value::UINTEGER(result.node));
     } else {
-      output.SetValue(col++, rows, Value::UINTEGER(result.node));
+      output.data[col++].SetValue(rows, Value::UINTEGER(result.node));
     }
 
-    output.SetValue(col++, rows,
-                    Value::ENUM(static_cast<uint64_t>(result.status),
-                                schema::DELETE_STATUS_ENUM));
-    output.SetValue(col++, rows,
-                    result.error.empty() ? Value(LogicalType::VARCHAR)
-                                         : Value(result.error));
+    output.data[col++].SetValue(
+        rows, Value::ENUM(static_cast<uint64_t>(result.status),
+                          schema::DELETE_STATUS_ENUM));
+    output.data[col++].SetValue(rows, result.error.empty()
+                                          ? Value(LogicalType::VARCHAR)
+                                          : Value(result.error));
 
     sync_buffer->emitted++;
     rows++;
@@ -645,7 +647,7 @@ OperatorResultType PSTDeleteFunction(ExecutionContext &ec,
 
   // Emitting nothing is what makes the finalize pass a barrier: no downstream
   // operator can be satisfied before the source scan has been drained
-  output.SetCardinality(0);
+  output.SetChildCardinality(0);
   return OperatorResultType::NEED_MORE_INPUT;
 }
 
@@ -655,7 +657,7 @@ OperatorFinalizeResultType PSTDeleteFinalFunction(ExecutionContext &ec,
   auto &global_state = data.global_state->Cast<PSTDeleteGlobalState>();
 
   global_state.drain(ec.client);
-  output.SetCardinality(global_state.emit_rows(output));
+  output.SetChildCardinality(global_state.emit_rows(output));
 
   return global_state.finished() ? OperatorFinalizeResultType::FINISHED
                                  : OperatorFinalizeResultType::HAVE_MORE_OUTPUT;
@@ -666,7 +668,7 @@ void PSTWipeFunction(ClientContext &ctx, TableFunctionInput &data,
   auto &global_state = data.global_state->Cast<PSTDeleteGlobalState>();
 
   global_state.drain(ctx);
-  output.SetCardinality(global_state.emit_rows(output));
+  output.SetChildCardinality(global_state.emit_rows(output));
 }
 
 } // namespace intellekt::duckpst

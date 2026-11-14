@@ -15,6 +15,7 @@ pom.xml.asc
 # DuckDB build artifacts
 /build/
 /.cache/
+/duckdb_unittest_tempdir/
 
 # Jank REPL history
 .jank-repl-history

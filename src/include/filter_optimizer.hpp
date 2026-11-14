@@ -17,22 +17,22 @@ class PSTFilterOptimizer : public OptimizerExtension {
    *        and erase them from the operator.
    *
    * @param pst_logical_get The PST LOGICAL_GET
-   * @return map<idx_t, unique_ptr<TableFilter>> A map of {schema_col ->
-   * TableFilter}
+   * @return map<ProjectionIndex, unique_ptr<TableFilter>> A map of
+   * {projection_id -> TableFilter}
    */
-  static map<idx_t, unique_ptr<TableFilter>>
+  static map<ProjectionIndex, unique_ptr<TableFilter>>
   CollectAndEraseNonVirtualColumnFilters(LogicalGet &pst_logical_get);
 
   /**
-   * @brief Create a filter from a map of {schema_col -> TableFilter}
+   * @brief Create a filter from a map of {projection_id -> TableFilter}
    *
    * @param non_vcol_filters
    * @param pst_logical_get
    * @return unique_ptr<LogicalFilter>
    */
-  static unique_ptr<LogicalFilter>
-  CreateLogicalFilter(map<idx_t, unique_ptr<TableFilter>> &non_vcol_filters,
-                      LogicalGet &pst_logical_get);
+  static unique_ptr<LogicalFilter> CreateLogicalFilter(
+      map<ProjectionIndex, unique_ptr<TableFilter>> &non_vcol_filters,
+      LogicalGet &pst_logical_get);
 
   /**
    * @brief Walk the plan and split non-pushdown filters out of all PST

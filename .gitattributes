@@ -1,0 +1,2 @@
+# Preserve vendored patch context, including space-only context lines.
+vcpkg_ports/libiconv/*.patch -whitespace

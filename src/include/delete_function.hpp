@@ -60,7 +60,7 @@ struct PSTDeleteResult {
  * @brief Bind data shared by the delete functions and the free space wipe
  */
 struct PSTDeleteTableFunctionData : public TableFunctionData {
-  duckdb::named_parameter_map_t named_parameters;
+  duckdb::named_argument_map_t named_parameters;
 
 public:
   const PSTDeleteFunctionMode mode;
@@ -72,7 +72,7 @@ public:
 
   PSTDeleteTableFunctionData(const PSTDeleteFunctionMode mode,
                              const string &function_name,
-                             duckdb::named_parameter_map_t &named_parameters);
+                             duckdb::named_argument_map_t &named_parameters);
 
   /**
    * @brief Whether the caller asked for the deletion to actually happen
@@ -97,7 +97,7 @@ public:
    * @param names Positionally ordered column names
    */
   void bind_table_function_output_schema(vector<LogicalType> &return_types,
-                                         vector<string> &names);
+                                         vector<Identifier> &names);
 
   /**
    * @brief Hold the nested input table to this mode's column contract,
@@ -208,7 +208,7 @@ public:
 unique_ptr<FunctionData> PSTDeleteBind(ClientContext &ctx,
                                        TableFunctionBindInput &input,
                                        vector<LogicalType> &return_types,
-                                       vector<string> &names);
+                                       vector<Identifier> &names);
 
 /**
  * @brief Bind the free space wipe, which takes a path rather than a table
@@ -216,7 +216,7 @@ unique_ptr<FunctionData> PSTDeleteBind(ClientContext &ctx,
 unique_ptr<FunctionData> PSTWipeBind(ClientContext &ctx,
                                      TableFunctionBindInput &input,
                                      vector<LogicalType> &return_types,
-                                     vector<string> &names);
+                                     vector<Identifier> &names);
 
 unique_ptr<GlobalTableFunctionState>
 PSTDeleteInitGlobal(ClientContext &ctx, TableFunctionInitInput &input);
