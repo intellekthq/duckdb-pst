@@ -16,6 +16,16 @@ EXT_FLAGS=-DCMAKE_CXX_STANDARD=17
 # Include the Makefile from extension-ci-tools
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
 
+# Keep SQL test globs intact: Catch treats expanded filenames as an intersection.
+define RUN_TEST
+	@if [ "$(SKIP_TESTS)" = "1" ]; then \
+		echo "Tests are skipped in this run..."; \
+	else \
+		set -f; \
+		$(TEST_RUNNER) ./build/$1/$(TEST_PATH) $(T); \
+	fi
+endef
+
 # Formatting targets
 clang-format:
 	find src -name '*.cpp' -o -name '*.hpp' | xargs clang-format -i
